@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foro de Inversores sobre Cultismos</title>
+    <!-- Tailwind CSS CDN para el estilo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilos personalizados para la fuente y el fondo */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Azul oscuro para un estilo financiero */
+            color: #e2e8f0;
+        }
+        /* Estilos para la pestaña activa */
+        .tab-button.active {
+            border-bottom: 2px solid #3b82f6; /* Azul brillante */
+            color: #3b82f6;
+        }
+        /* Estilos para el spinner de carga */
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Estilo para el ícono de retorno */
+        .back-icon {
+            transform: scaleX(1);
+            transition: transform 0.3s ease-in-out;
+        }
+        .back-icon:hover {
+            transform: scaleX(1.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen flex flex-col items-center py-10">
+
+    <!-- Contenedor para mensajes de la aplicación (éxito/error) -->
+    <div id="message-box" class="fixed top-5 right-5 z-50"></div>
+
+    <!-- Contenedor principal para el foro, oculto hasta que el usuario se autentique -->
+    <div id="app-container" class="container mx-auto px-4 max-w-4xl hidden">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-white mb-2">Foro de Inversores: Cultismos y la Cultura</h1>
+            <p class="text-lg text-slate-400">
+                <span id="welcome-message"></span>, bienvenido a un espacio para explorar oportunidades de inversión.
+            </p>
+        </header>
+
+        <main class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-10">
+            <!-- Navegación por dropdown -->
+            <div class="mb-6">
+                <label for="tab-select" class="block text-sm font-medium text-slate-300 mb-2">Selecciona una categoría:</label>
+                <select id="tab-select" class="w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <!-- Las opciones se renderizarán dinámicamente -->
+                </select>
+            </div>
+
+            <!-- Contenido de las pestañas -->
+            <div id="tab-content">
+                <!-- Los paneles de contenido se renderizarán aquí dinámicamente -->
+            </div>
+            
+            <!-- Sección de Propuestas Pendientes -->
+            <div id="proposals-container" class="mt-8">
+                <h2 class="text-2xl font-bold text-white mb-4">Propuestas Pendientes de Votación</h2>
+                <div id="proposals-list" class="space-y-4">
+                    <!-- Las propuestas se renderizarán aquí -->
+                </div>
+            </div>
+
+            <!-- Formulario para una nueva discusión -->
+            <div id="new-discussion-form" class="mt-8">
+                <h2 class="text-2xl font-bold text-white mb-4">Comienza una Nueva Discusión</h2>
+                <form id="discussion-form" class="space-y-4">
+                    <div>
+                        <label for="discussion-category" class="block text-sm font-medium text-slate-300">Categoría</label>
+                        <select id="discussion-category" name="discussion-category" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <!-- Opciones de categorías se llenarán dinámicamente -->
+                        </select>
+                    </div>
+                    <!-- Sección de preguntas a inversores (oculto por defecto) -->
+                    <div id="investor-question-section" class="hidden space-y-4">
+                        <div>
+                            <label for="target-investor" class="block text-sm font-medium text-slate-300">Preguntar a:</label>
+                            <select id="target-investor" name="target-investor" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                <!-- La lista de usuarios se renderizará aquí -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="motivation" class="block text-sm font-medium text-slate-300">¿Qué te ha llamado la atención de esta persona?</label>
+                            <textarea id="motivation" name="motivation" rows="2" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="titulo" class="block text-sm font-medium text-slate-300">Título</label>
+                        <input type="text" id="titulo" name="titulo" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="mensaje" class="block text-sm font-medium text-slate-300">Mensaje</label>
+                        <textarea id="mensaje" name="mensaje" rows="4" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-green-700 transition duration-300">
+                            Publicar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Formulario para proponer una nueva categoría -->
+            <div id="propose-category-form-container" class="mt-8">
+                <h2 class="text-2xl font-bold text-white mb-4">Proponer una Nueva Categoría</h2>
+                <p class="text-slate-400 mb-4">Tu propuesta se someterá a votación por 24 horas.</p>
+                <form id="propose-category-form" class="space-y-4">
+                    <div>
+                        <label for="categoria-titulo" class="block text-sm font-medium text-slate-300">Nombre de la Categoría</label>
+                        <input type="text" id="categoria-titulo" name="categoria-titulo" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label for="categoria-descripcion" class="block text-sm font-medium text-slate-300">Descripción (Título de la Pestaña)</label>
+                        <input type="text" id="categoria-descripcion" name="categoria-descripcion" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition duration-300">
+                            Enviar Propuesta
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal de registro/inicio de sesión, visible hasta que el usuario se autentique -->
+    <div id="auth-modal" class="fixed inset-0 bg-slate-900 bg-opacity-75 flex items-center justify-center hidden">
+        <div class="bg-slate-800 rounded-xl shadow-lg p-8 max-w-sm w-full mx-4">
+            <h2 class="text-2xl font-bold text-white mb-4 text-center" id="auth-title"></h2>
+            <p class="text-slate-400 mb-4 text-center">Inicia sesión o crea una cuenta para continuar.</p>
+            <form id="auth-form" class="space-y-4">
+                <div>
+                    <label for="auth-name" class="block text-sm font-medium text-slate-300">Tu Nombre de Usuario</label>
+                    <input type="text" id="auth-name" name="auth-name" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label for="auth-password" class="block text-sm font-medium text-slate-300">Contraseña</label>
+                    <input type="password" id="auth-password" name="auth-password" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                </div>
+                <div id="register-fields" class="space-y-4 hidden">
+                    <div>
+                        <label for="user-profession" class="block text-sm font-medium text-slate-300">Tu Profesión</label>
+                        <input type="text" id="user-profession" name="user-profession" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Ej: Ingeniero, Estudiante, etc.">
+                    </div>
+                    <div>
+                        <label for="investor-status" class="block text-sm font-medium text-slate-300">Tipo de Inversor</label>
+                        <select id="investor-status" name="investor-status" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Selecciona una opción</option>
+                            <option value="Principiante">Principiante (quiero empezar)</option>
+                            <option value="Inversor pequeño">Inversor pequeño</option>
+                            <option value="Inversor mediano">Inversor mediano</option>
+                            <option value="Inversor grande">Inversor grande</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit" id="auth-button" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition duration-300">
+                        Acceder
+                    </button>
+                </div>
+                <button type="button" id="toggle-mode-button" class="mt-2 text-center w-full text-sm text-slate-400 hover:text-slate-200 transition">
+                    ¿No tienes una cuenta? Regístrate aquí.
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Vista de discusión detallada (oculta por defecto) -->
+    <div id="discussion-view" class="container mx-auto px-4 max-w-4xl hidden">
+        <button id="back-button" class="text-blue-400 mb-6 flex items-center hover:text-blue-200 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 back-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+            Volver al Foro
+        </button>
+        <div id="discussion-content" class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-10">
+            <!-- El contenido de la discusión se cargará aquí -->
+        </div>
+        <div class="mt-8 bg-slate-800 rounded-xl shadow-lg p-6 md:p-10">
+            <h3 class="text-xl font-bold text-white mb-4">Comentarios</h3>
+            <div id="comments-list" class="space-y-4">
+                <!-- Los comentarios se cargarán aquí -->
+            </div>
+            <form id="comment-form" class="mt-6">
+                <textarea id="comment-text" class="w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500" rows="3" placeholder="Añade un comentario..."></textarea>
+                <button type="submit" class="mt-2 w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition duration-300">
+                    Publicar Comentario
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Carga los SDKs de Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, where, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variables globales proporcionadas por el entorno
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let userId = null;
+        let userName = null;
+        let userProfession = null;
+        let investorStatus = null;
+        let currentDiscussionId = null;
+        let allUsers = [];
+        
+        // Referencias a los elementos del DOM
+        const appContainer = document.getElementById('app-container');
+        const discussionView = document.getElementById('discussion-view');
+        const authModal = document.getElementById('auth-modal');
+        const authTitle = document.getElementById('auth-title');
+        const authForm = document.getElementById('auth-form');
+        const authNameInput = document.getElementById('auth-name');
+        const authPasswordInput = document.getElementById('auth-password');
+        const registerFields = document.getElementById('register-fields');
+        const authButton = document.getElementById('auth-button');
+        const toggleModeButton = document.getElementById('toggle-mode-button');
+        const userProfessionInput = document.getElementById('user-profession');
+        const investorStatusSelect = document.getElementById('investor-status');
+        const welcomeMessage = document.getElementById('welcome-message');
+        const discussionForm = document.getElementById('discussion-form');
+        const tabSelect = document.getElementById('tab-select');
+        const discussionCategorySelect = document.getElementById('discussion-category');
+        const tabContent = document.getElementById('tab-content');
+        const messageBox = document.getElementById('message-box');
+        const proposeCategoryForm = document.getElementById('propose-category-form');
+        const proposalsList = document.getElementById('proposals-list');
+        const backButton = document.getElementById('back-button');
+        const discussionContent = document.getElementById('discussion-content');
+        const commentsList = document.getElementById('comments-list');
+        const commentForm = document.getElementById('comment-form');
+        const commentTextarea = document.getElementById('comment-text');
+        const investorQuestionSection = document.getElementById('investor-question-section');
+        const targetInvestorSelect = document.getElementById('target-investor');
+        const motivationTextarea = document.getElementById('motivation');
+        
+        // Modo del formulario de autenticación
+        let isRegisterMode = false;
+
+        // Función para mostrar mensajes de estado
+        function showMessage(message, type = 'info') {
+            const el = document.createElement('div');
+            el.className = `p-4 rounded-lg shadow-md mb-2 text-white ${type === 'success' ? 'bg-green-500' : (type === 'error' ? 'bg-red-500' : 'bg-blue-500')}`;
+            el.textContent = message;
+            messageBox.appendChild(el);
+            setTimeout(() => {
+                el.remove();
+            }, 5000);
+        }
+
+        // Lógica de Autenticación
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                const userDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, 'user_data');
+                const userDocSnap = await getDoc(userDocRef);
+
+                if (userDocSnap.exists() && userDocSnap.data().name) {
+                    const userData = userDocSnap.data();
+                    userName = userData.name;
+                    userProfession = userData.profession;
+                    investorStatus = userData.investorStatus;
+                    welcomeMessage.textContent = userName;
+                    authModal.classList.add('hidden');
+                    appContainer.classList.remove('hidden');
+                    setupFirestoreListeners();
+                } else {
+                    authTitle.textContent = '¡Bienvenido!';
+                    authButton.textContent = 'Registrarse';
+                    toggleModeButton.textContent = '¿Ya tienes una cuenta? Accede aquí.';
+                    isRegisterMode = true;
+                    registerFields.classList.remove('hidden');
+                    authModal.classList.remove('hidden');
+                }
+            } else {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken).catch(e => {
+                        console.error('Custom token sign-in failed. Signing in anonymously.', e);
+                        signInAnonymously(auth);
+                    });
+                } else {
+                    await signInAnonymously(auth).catch(e => {
+                         console.error('Anonymous sign-in failed.', e);
+                    });
+                }
+            }
+        });
+
+        // Manejo del cambio de modo en el modal de autenticación
+        toggleModeButton.addEventListener('click', () => {
+            isRegisterMode = !isRegisterMode;
+            if (isRegisterMode) {
+                authTitle.textContent = '¡Bienvenido!';
+                authButton.textContent = 'Registrarse';
+                toggleModeButton.textContent = '¿Ya tienes una cuenta? Accede aquí.';
+                registerFields.classList.remove('hidden');
+                userProfessionInput.setAttribute('required', 'true');
+                investorStatusSelect.setAttribute('required', 'true');
+            } else {
+                authTitle.textContent = 'Acceso al Foro';
+                authButton.textContent = 'Acceder';
+                toggleModeButton.textContent = '¿No tienes una cuenta? Regístrate aquí.';
+                registerFields.classList.add('hidden');
+                userProfessionInput.removeAttribute('required');
+                investorStatusSelect.removeAttribute('required');
+            }
+            authForm.reset();
+        });
+
+        // Manejo del formulario de autenticación
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = authNameInput.value.trim();
+            const password = authPasswordInput.value.trim();
+            
+            if (!name || !password) {
+                showMessage('Por favor, rellena todos los campos.', 'error');
+                return;
+            }
+
+            const userDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, 'user_data');
+            const publicUserDocRef = doc(db, `artifacts/${appId}/public/data/public_users`, userId);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                // Modo de inicio de sesión
+                const userData = userDocSnap.data();
+                if (userData.password === password) {
+                    // Contraseña coincide, permite el acceso
+                    userName = userData.name;
+                    userProfession = userData.profession;
+                    investorStatus = userData.investorStatus;
+                    welcomeMessage.textContent = userName;
+                    authModal.classList.add('hidden');
+                    appContainer.classList.remove('hidden');
+                    setupFirestoreListeners();
+                    showMessage('¡Acceso exitoso!', 'success');
+                } else {
+                    showMessage('Nombre de usuario o contraseña incorrectos.', 'error');
+                }
+            } else {
+                // Modo de registro
+                const profession = userProfessionInput.value.trim();
+                const status = investorStatusSelect.value;
+                if (!profession || !status) {
+                    showMessage('Por favor, rellena todos los campos de registro.', 'error');
+                    return;
+                }
+                
+                try {
+                    // Guarda el perfil privado del usuario
+                    // NOTA: Almacenar contraseñas en texto plano no es seguro. Para una aplicación real, se debería usar hashing.
+                    await setDoc(userDocRef, { name: name, password: password, profession: profession, investorStatus: status, userId: userId });
+
+                    // Guarda una versión pública del perfil
+                    await setDoc(publicUserDocRef, { name: name, investorStatus: status, userId: userId });
+
+                    userName = name;
+                    userProfession = profession;
+                    investorStatus = status;
+                    welcomeMessage.textContent = userName;
+                    authModal.classList.add('hidden');
+                    appContainer.classList.remove('hidden');
+                    setupFirestoreListeners();
+                    showMessage('¡Registro exitoso! Ya puedes usar el foro.', 'success');
+                } catch (e) {
+                    console.error("Error al guardar el perfil de usuario: ", e);
+                    showMessage('Error al guardar los datos. Inténtalo de nuevo.', 'error');
+                }
+            }
+        });
+
+        // Manejo de la selección de categoría en el formulario de nueva discusión
+        discussionCategorySelect.addEventListener('change', (e) => {
+            if (e.target.value === 'investor_questions') {
+                investorQuestionSection.classList.remove('hidden');
+            } else {
+                investorQuestionSection.classList.add('hidden');
+            }
+        });
+
+        // Lógica para guardar una nueva discusión
+        discussionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const category = discussionCategorySelect.value;
+            const title = document.getElementById('titulo').value;
+            const message = document.getElementById('mensaje').value;
+            const isInvestorQuestion = category === 'investor_questions';
+            const targetUserId = isInvestorQuestion ? targetInvestorSelect.value : null;
+            const motivation = isInvestorQuestion ? motivationTextarea.value : null;
+
+            if (category && title && message) {
+                if (isInvestorQuestion && (!targetUserId || !motivation)) {
+                    showMessage('Por favor, selecciona a un inversor y escribe la motivación para la pregunta.', 'error');
+                    return;
+                }
+                if (isInvestorQuestion && targetUserId === userId) {
+                    showMessage('No puedes hacer una pregunta privada a ti mismo.', 'error');
+                    return;
+                }
+
+                try {
+                    const docRef = await addDoc(collection(db, `artifacts/${appId}/public/data/discussions`), {
+                        category: category,
+                        title: title,
+                        message: message,
+                        author: userName,
+                        authorUserId: userId,
+                        authorProfession: userProfession,
+                        investorStatus: investorStatus,
+                        createdAt: new Date(),
+                        isPrivate: isInvestorQuestion,
+                        targetUserId: isInvestorQuestion ? targetUserId : null,
+                        motivation: isInvestorQuestion ? motivation : null,
+                        numComments: 0,
+                        uniqueCommenters: {}
+                    });
+                    console.log("Document written with ID: ", docRef.id);
+                    discussionForm.reset();
+                    showMessage('¡Discusión publicada con éxito!', 'success');
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    showMessage('Error al publicar. Inténtalo de nuevo.', 'error');
+                }
+            } else {
+                showMessage('Por favor, rellena todos los campos.', 'error');
+            }
+        });
+
+        // Lógica para proponer una nueva categoría
+        proposeCategoryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = document.getElementById('categoria-titulo').value;
+            const label = document.getElementById('categoria-descripcion').value;
+            const id = title.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            const endTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas a partir de ahora
+
+            if (title && label) {
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/category_proposals`), {
+                        id,
+                        title,
+                        label,
+                        author: userName,
+                        createdAt: new Date(),
+                        endTime,
+                        votes: { yes: 0, no: 0, voters: {} }
+                    });
+                    proposeCategoryForm.reset();
+                    showMessage('¡Propuesta enviada con éxito! La votación ha comenzado.', 'success');
+                } catch (e) {
+                    console.error('Error adding category proposal:', e);
+                    showMessage('Error al enviar la propuesta.', 'error');
+                }
+            }
+        });
+
+        // Lógica de pestañas y carga de datos
+        function setupFirestoreListeners() {
+            // Escuchar cambios en los usuarios para el desplegable
+            onSnapshot(query(collection(db, `artifacts/${appId}/public/data/public_users`)), (snapshot) => {
+                allUsers = snapshot.docs.map(doc => ({ userId: doc.id, ...doc.data() }));
+                renderInvestorSelect();
+            }, (error) => {
+                console.error("Error fetching public users: ", error);
+            });
+            
+            // Escuchar cambios en las categorías
+            onSnapshot(query(collection(db, `artifacts/${appId}/public/data/categories`)), (snapshot) => {
+                renderCategories(snapshot.docs.map(doc => doc.data()));
+            }, (error) => {
+                console.error("Error fetching categories: ", error);
+            });
+
+            // Escuchar cambios en las discusiones
+            onSnapshot(query(collection(db, `artifacts/${appId}/public/data/discussions`), orderBy('createdAt', 'desc')), (snapshot) => {
+                const discussions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                allDiscussionsData = discussions;
+                renderDiscussionsForCategory(tabSelect.value, allDiscussionsData);
+            }, (error) => {
+                console.error("Error fetching discussions: ", error);
+            });
+
+            // Escuchar cambios en las propuestas de categorías
+            onSnapshot(query(collection(db, `artifacts/${appId}/public/data/category_proposals`)), (snapshot) => {
+                const proposals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderProposals(proposals);
+            }, (error) => {
+                console.error("Error fetching proposals: ", error);
+            });
+        }
+        
+        // Renderiza el select de inversores en el formulario de preguntas
+        function renderInvestorSelect() {
+            targetInvestorSelect.innerHTML = `<option value="">Selecciona un inversor</option>`;
+            allUsers.filter(user => user.userId !== userId).forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.userId;
+                option.textContent = `${user.name} (${user.investorStatus})`;
+                targetInvestorSelect.appendChild(option);
+            });
+        }
+
+        let countdownIntervals = {};
+        function renderProposals(proposals) {
+            proposalsList.innerHTML = '';
+            // Limpia los temporizadores antiguos
+            for (const key in countdownIntervals) {
+                clearInterval(countdownIntervals[key]);
+            }
+            countdownIntervals = {};
+            
+            proposals.forEach(proposal => {
+                const proposalDocRef = doc(db, `artifacts/${appId}/public/data/category_proposals`, proposal.id);
+                
+                // Verifica si la propuesta ya ha expirado
+                if (Date.now() > proposal.endTime.toDate().getTime()) {
+                    checkAndFinalizeProposal(proposal.id, proposal.votes, proposal.title, proposal.label);
+                    return;
+                }
+                
+                const proposalEl = document.createElement('div');
+                proposalEl.className = 'bg-slate-700 rounded-lg p-4 shadow-sm';
+                
+                const totalVotes = proposal.votes.yes + proposal.votes.no;
+                const yesPercentage = totalVotes > 0 ? (proposal.votes.yes / totalVotes) * 100 : 0;
+                const userHasVoted = proposal.votes.voters && proposal.votes.voters[userId];
+                const voteStatus = userHasVoted ? `(Ya votaste: ${proposal.votes.voters[userId] === 'yes' ? 'Sí' : 'No'})` : '';
+
+                proposalEl.innerHTML = `
+                    <h3 class="text-xl font-semibold text-white">${proposal.title}</h3>
+                    <p class="text-slate-400 text-sm mt-1">Propuesta por ${proposal.author} - <span id="countdown-${proposal.id}"></span></p>
+                    <div class="mt-4 flex items-center justify-between">
+                        <div class="flex-1">
+                            <p class="text-green-400 font-bold">${yesPercentage.toFixed(0)}% Sí</p>
+                            <div class="w-full bg-slate-600 rounded-full h-2.5 mt-1">
+                                <div class="bg-green-500 h-2.5 rounded-full" style="width: ${yesPercentage.toFixed(0)}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex space-x-2">
+                        <button data-vote="yes" data-proposal-id="${proposal.id}" class="vote-button flex-1 bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition duration-300 disabled:opacity-50" ${userHasVoted ? 'disabled' : ''}>Sí</button>
+                        <button data-vote="no" data-proposal-id="${proposal.id}" class="vote-button flex-1 bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 transition duration-300 disabled:opacity-50" ${userHasVoted ? 'disabled' : ''}>No</button>
+                    </div>
+                    <p class="text-sm text-slate-400 mt-2">${voteStatus}</p>
+                `;
+                proposalsList.appendChild(proposalEl);
+
+                // Configura el temporizador
+                const countdownEl = document.getElementById(`countdown-${proposal.id}`);
+                countdownIntervals[proposal.id] = setInterval(() => {
+                    const timeLeft = proposal.endTime.toDate().getTime() - Date.now();
+                    if (timeLeft <= 0) {
+                        clearInterval(countdownIntervals[proposal.id]);
+                        countdownEl.textContent = 'Votación finalizada.';
+                        checkAndFinalizeProposal(proposal.id, proposal.votes, proposal.title, proposal.label);
+                        return;
+                    }
+                    const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+                    const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+                    countdownEl.textContent = `${hours}h ${minutes}m ${seconds}s restantes`;
+                }, 1000);
+            });
+            
+            // Lógica para manejar el clic en los botones de voto
+            document.querySelectorAll('.vote-button').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const proposalId = e.target.dataset.proposalId;
+                    const vote = e.target.dataset.vote;
+
+                    const proposalDocRef = doc(db, `artifacts/${appId}/public/data/category_proposals`, proposalId);
+                    const proposalDocSnap = await getDoc(proposalDocRef);
+                    if (proposalDocSnap.exists()) {
+                        const proposalData = proposalDocSnap.data();
+                        if (proposalData.votes.voters && proposalData.votes.voters[userId]) {
+                            showMessage('Ya has votado en esta propuesta.', 'info');
+                            return;
+                        }
+
+                        const newVotes = { ...proposalData.votes };
+                        newVotes[vote] = (newVotes[vote] || 0) + 1;
+                        newVotes.voters[userId] = vote;
+
+                        try {
+                            await updateDoc(proposalDocRef, { votes: newVotes });
+                            showMessage('¡Voto registrado con éxito!', 'success');
+                        } catch (e) {
+                            console.error('Error al registrar el voto:', e);
+                            showMessage('Error al registrar tu voto.', 'error');
+                        }
+                    }
+                });
+            });
+        }
+        
+        async function checkAndFinalizeProposal(docId, votes, title, label) {
+            const totalVotes = votes.yes + votes.no;
+            const yesPercentage = totalVotes > 0 ? (votes.yes / totalVotes) * 100 : 0;
+            
+            const proposalDocRef = doc(db, `artifacts/${appId}/public/data/category_proposals`, docId);
+            
+            if (yesPercentage >= 70) {
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/categories`), {
+                        id: title.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+                        title: title,
+                        label: label
+                    });
+                    await deleteDoc(proposalDocRef);
+                    showMessage(`¡La categoría "${title}" ha sido aprobada y añadida al foro!`, 'success');
+                } catch (e) {
+                    console.error('Error al finalizar la propuesta:', e);
+                    showMessage('Ocurrió un error al añadir la nueva categoría.', 'error');
+                }
+            } else {
+                await deleteDoc(proposalDocRef);
+                showMessage(`La propuesta "${title}" no alcanzó el 70% de votos y no ha sido aprobada.`, 'info');
+            }
+        }
+
+        // Renderiza el select de navegación
+        let allCategories = [];
+        function renderCategories(categories) {
+            tabSelect.innerHTML = '';
+            discussionCategorySelect.innerHTML = '';
+            tabContent.innerHTML = '';
+
+            // Categorías predeterminadas
+            allCategories = [
+                { id: 'all_discussions', title: 'Todas las Discusiones', label: 'Discusiones Recientes y Activas' },
+                { id: 'investor_questions', title: 'Preguntas a Inversores', label: 'Preguntas Directas a la Comunidad de Inversores' },
+                { id: 'capital', title: 'Por Capital', label: 'Inversiones según Capital' },
+                { id: 'duracion', title: 'Por Duración', label: 'Inversiones según Duración' },
+                { id: 'margen', title: 'Por Margen de Beneficio', label: 'Inversiones según Margen de Beneficio' },
+                { id: 'riesgo', title: 'Por Riesgo', label: 'Inversiones según Riesgo' },
+                ...categories
+            ];
+
+            allCategories.forEach((cat, index) => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.title;
+                tabSelect.appendChild(option);
+
+                const formOption = document.createElement('option');
+                formOption.value = cat.id;
+                formOption.textContent = cat.title;
+                discussionCategorySelect.appendChild(formOption);
+
+                const pane = document.createElement('div');
+                pane.id = `content-${cat.id}`;
+                pane.className = `tab-pane ${index === 0 ? '' : 'hidden'}`;
+                pane.innerHTML = `<h2 class="text-2xl font-bold text-white mb-6">${cat.label}</h2><div class="space-y-6 discussions-container" id="discussions-${cat.id}"></div>`;
+                tabContent.appendChild(pane);
+            });
+            
+            tabSelect.addEventListener('change', (e) => {
+                const categoryId = e.target.value;
+                document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+                const activePane = document.getElementById(`content-${categoryId}`);
+                activePane.classList.remove('hidden');
+
+                if (categoryId === 'investor_questions') {
+                     renderInvestorQuestionsPane();
+                } else {
+                    renderDiscussionsForCategory(categoryId, allDiscussionsData);
+                }
+            });
+
+             // Renderiza la vista inicial
+            renderDiscussionsForCategory('all_discussions', allDiscussionsData);
+        }
+
+        // Renderiza el panel de "Preguntas a Inversores" con filtros
+        function renderInvestorQuestionsPane() {
+            const pane = document.getElementById('content-investor_questions');
+            pane.innerHTML = `
+                <h2 class="text-2xl font-bold text-white mb-6">Preguntas Directas a la Comunidad de Inversores</h2>
+                <div id="investor-filters" class="flex flex-wrap gap-2 mb-6">
+                    <button class="filter-button bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition" data-filter="">Todos</button>
+                    <button class="filter-button bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition" data-filter="Principiante">Principiante</button>
+                    <button class="filter-button bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition" data-filter="Inversor pequeño">Pequeño</button>
+                    <button class="filter-button bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition" data-filter="Inversor mediano">Mediano</button>
+                    <button class="filter-button bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition" data-filter="Inversor grande">Grande</button>
+                </div>
+                <div class="space-y-6 discussions-container" id="discussions-investor_questions"></div>
+            `;
+            document.querySelectorAll('.filter-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const filter = e.target.dataset.filter;
+                    renderDiscussionsForCategory('investor_questions', allDiscussionsData, filter);
+                });
+            });
+            renderDiscussionsForCategory('investor_questions', allDiscussionsData);
+        }
+
+        // Renderiza las discusiones en los contenedores de las pestañas
+        let allDiscussionsData = [];
+        function renderDiscussions(discussions) {
+            allDiscussionsData = discussions;
+            document.querySelectorAll('.discussions-container').forEach(el => el.innerHTML = '');
+            renderDiscussionsForCategory(tabSelect.value, allDiscussionsData);
+        }
+
+        // Función para renderizar discusiones en un contenedor específico
+        function renderDiscussionsForCategory(categoryId, discussions, filterByInvestorStatus = '') {
+            const container = document.getElementById(`discussions-${categoryId}`);
+            if (!container) return;
+            
+            container.innerHTML = `<div class="loading-spinner mx-auto"></div>`;
+
+            const filteredDiscussions = discussions.filter(d => {
+                const categoryMatch = categoryId === 'all_discussions' || d.category === categoryId;
+                const investorMatch = !filterByInvestorStatus || d.investorStatus === filterByInvestorStatus;
+                
+                // Lógica de visibilidad para discusiones privadas
+                if (d.isPrivate) {
+                    return categoryMatch && investorMatch && (d.authorUserId === userId || d.targetUserId === userId);
+                }
+
+                return categoryMatch && investorMatch;
+            });
+
+            container.innerHTML = '';
+            if (filteredDiscussions.length === 0) {
+                 container.innerHTML = '<p class="text-slate-400">No hay discusiones en esta categoría.</p>';
+            }
+            
+            filteredDiscussions.forEach(discussion => {
+                const discussionEl = createDiscussionCard(discussion);
+                discussionEl.addEventListener('click', () => showDiscussion(discussion.id));
+                container.appendChild(discussionEl);
+            });
+        }
+
+        function createDiscussionCard(discussion) {
+            const discussionEl = document.createElement('div');
+            discussionEl.className = 'bg-slate-700 rounded-lg p-4 shadow-sm cursor-pointer hover:bg-slate-600 transition-colors relative';
+            discussionEl.dataset.discussionId = discussion.id;
+            const dateText = discussion.createdAt && discussion.createdAt.toDate ? discussion.createdAt.toDate().toLocaleDateString() : 'Fecha desconocida';
+            
+            const uniqueCommentersCount = Object.keys(discussion.uniqueCommenters || {}).length;
+            let commentCounter = '';
+            if (uniqueCommentersCount > 0) {
+                 commentCounter = `
+                     <div class="absolute top-2 right-2 flex items-center bg-slate-800 rounded-full px-2 py-1 text-xs text-slate-400">
+                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                             <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.984l-2.078.219a.75.75 0 01-.84-.96l.219-2.078A8.841 8.841 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd" />
+                         </svg>
+                         <span>${uniqueCommentersCount}</span>
+                     </div>
+                 `;
+            }
+            const isPrivateTag = discussion.isPrivate ? `<span class="bg-red-500 text-white text-xs font-bold py-1 px-2 rounded-full absolute top-2 left-2">Privada</span>` : '';
+
+            discussionEl.innerHTML = `
+                ${commentCounter}
+                ${isPrivateTag}
+                <h3 class="text-lg font-semibold text-white mt-4">${discussion.title}</h3>
+                <p class="text-slate-400 text-sm mt-1">por ${discussion.author} (${discussion.investorStatus}) - ${dateText}</p>
+                <p class="text-slate-500 mt-2 line-clamp-2">${discussion.message}</p>
+            `;
+            return discussionEl;
+        }
+
+        // Muestra la vista de discusión detallada
+        async function showDiscussion(discussionId) {
+            currentDiscussionId = discussionId;
+            appContainer.classList.add('hidden');
+            discussionView.classList.remove('hidden');
+            
+            const discussionDocRef = doc(db, `artifacts/${appId}/public/data/discussions`, discussionId);
+            const discussionSnap = await getDoc(discussionDocRef);
+            
+            if (discussionSnap.exists()) {
+                const discussion = discussionSnap.data();
+                const dateText = discussion.createdAt && discussion.createdAt.toDate ? discussion.createdAt.toDate().toLocaleDateString() : 'Fecha desconocida';
+                
+                let motivationHtml = '';
+                if (discussion.motivation) {
+                    const targetInvestor = allUsers.find(u => u.userId === discussion.targetUserId);
+                    const targetInvestorName = targetInvestor ? targetInvestor.name : 'Inversor Desconocido';
+                    motivationHtml = `<p class="text-slate-400 mt-4 italic">Pregunta dirigida a ${targetInvestorName}: "${discussion.motivation}"</p>`;
+                }
+
+                let makePublicButton = '';
+                if (discussion.isPrivate && discussion.authorUserId === userId) {
+                    makePublicButton = `<button id="make-public-button" class="mt-4 bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">Hacer Pública</button>`;
+                }
+                
+                discussionContent.innerHTML = `
+                    <h2 class="text-3xl font-bold text-white mb-2">${discussion.title}</h2>
+                    <p class="text-slate-400 text-sm mb-4">por ${discussion.author} (${discussion.investorStatus}, ${discussion.authorProfession}) - ${dateText}</p>
+                    <p class="text-slate-300 mt-2">${discussion.message}</p>
+                    ${motivationHtml}
+                    ${makePublicButton}
+                `;
+                
+                if (makePublicButton) {
+                    document.getElementById('make-public-button').addEventListener('click', async () => {
+                        try {
+                            await updateDoc(discussionDocRef, { isPrivate: false });
+                            showMessage('¡Discusión hecha pública!', 'success');
+                            // Volver a renderizar la vista para que el botón desaparezca
+                            showDiscussion(discussionId);
+                        } catch (e) {
+                            console.error('Error al hacer pública la discusión:', e);
+                            showMessage('Error al hacer pública la discusión.', 'error');
+                        }
+                    });
+                }
+                
+                // Configura el listener de comentarios
+                onSnapshot(query(collection(db, `artifacts/${appId}/public/data/discussions/${discussionId}/comments`), orderBy('createdAt')), (snapshot) => {
+                    renderComments(snapshot.docs.map(doc => doc.data()));
+                });
+
+            } else {
+                showMessage('Discusión no encontrada.', 'error');
+                appContainer.classList.remove('hidden');
+                discussionView.classList.add('hidden');
+            }
+        }
+        
+        // Renderiza la lista de comentarios
+        function renderComments(comments) {
+            commentsList.innerHTML = '';
+            if (comments.length === 0) {
+                commentsList.innerHTML = '<p class="text-slate-400">Sé el primero en comentar.</p>';
+            }
+            comments.forEach(comment => {
+                const commentEl = document.createElement('div');
+                commentEl.className = 'bg-slate-700 rounded-lg p-3 shadow-sm';
+                const dateText = comment.createdAt && comment.createdAt.toDate ? comment.createdAt.toDate().toLocaleDateString() : 'Fecha desconocida';
+                commentEl.innerHTML = `
+                    <p class="text-sm font-semibold text-white">${comment.author} (${comment.investorStatus})</p>
+                    <p class="text-slate-400 text-xs">${comment.authorProfession} - ${dateText}</p>
+                    <p class="text-slate-300 mt-2">${comment.comment}</p>
+                `;
+                commentsList.appendChild(commentEl);
+            });
+        }
+        
+        // Maneja el botón de volver
+        backButton.addEventListener('click', () => {
+            discussionView.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+        });
+
+        // Maneja el formulario de comentarios y actualiza el contador de participantes
+        commentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const commentText = commentTextarea.value.trim();
+            if (commentText && currentDiscussionId) {
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const discussionDocRef = doc(db, `artifacts/${appId}/public/data/discussions`, currentDiscussionId);
+                        const discussionDoc = await transaction.get(discussionDocRef);
+                        
+                        if (!discussionDoc.exists()) {
+                            throw "Document does not exist!";
+                        }
+
+                        const currentData = discussionDoc.data();
+                        const uniqueCommenters = currentData.uniqueCommenters || {};
+                        
+                        // Añadir el comentario a la subcolección
+                        const newCommentRef = doc(collection(db, `artifacts/${appId}/public/data/discussions/${currentDiscussionId}/comments`));
+                        transaction.set(newCommentRef, {
+                            comment: commentText,
+                            author: userName,
+                            authorProfession: userProfession,
+                            investorStatus: investorStatus,
+                            createdAt: new Date()
+                        });
+                        
+                        // Actualizar el contador de la discusión principal
+                        // Utiliza el id del usuario para saber si es un nuevo participante
+                        const newUniqueCommenters = {...uniqueCommenters, [userId]: true};
+                        transaction.update(discussionDocRef, {
+                            uniqueCommenters: newUniqueCommenters
+                        });
+                    });
+
+                    commentTextarea.value = '';
+                    showMessage('Comentario añadido con éxito.', 'success');
+                } catch (e) {
+                    console.error('Error adding comment:', e);
+                    showMessage('Error al publicar el comentario.', 'error');
+                }
+            } else {
+                showMessage('Por favor, escribe un comentario para publicar.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
