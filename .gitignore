@@ -1,3 +1,7 @@
 # Datos personales que escriben las skills /trader-* (órdenes, límites, cartera, tu email para la SEC).
 # La Mesa de Trading los lee en local; no se suben al repositorio.
 trader/
+
+# Token de acceso del puente MetaTrader (se genera al arrancar bridge/server.py)
+bridge/.token
+__pycache__/

@@ -144,7 +144,9 @@
         const found = {};
         await Promise.all(Object.entries(PATHS).map(async ([key, path]) => {
             try {
-                const r = await fetch(path, { cache: 'no-store' });
+                let tok = '';
+                try { tok = localStorage.getItem('mt5.token') || ''; } catch (e) { /* sin almacenamiento */ }
+                const r = await fetch(path, { cache: 'no-store', headers: tok ? { 'X-Token': tok } : {} });
                 if (!r.ok) return;
                 const data = await r.json();
                 if (detectKind(data, path)) found[key] = { data, path };
@@ -819,17 +821,24 @@
         });
     }
 
+    const VIEWS = ['forum', 'desk', 'mt5'];
     function showView(view) {
-        const forum = document.getElementById('forum-section');
-        const desk = document.getElementById('desk-section');
+        if (!VIEWS.includes(view)) view = 'forum';
         const notice = document.getElementById('forum-offline-notice');
         const offline = Boolean(window.__forumOffline);
-        document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
-        if (forum) forum.classList.toggle('hidden', view !== 'forum' || offline);
+        document.querySelectorAll('.view-tab').forEach(t => {
+            const on = t.dataset.view === view;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        VIEWS.forEach(v => {
+            const el = document.getElementById(`${v}-section`);
+            if (el) el.classList.toggle('hidden', v !== view || (v === 'forum' && offline));
+        });
         if (notice) notice.classList.toggle('hidden', view !== 'forum' || !offline);
-        if (desk) desk.classList.toggle('hidden', view !== 'desk');
         try { localStorage.setItem('tradingDesk.view', view); } catch (e) { /* sin almacenamiento */ }
         if (view === 'desk') drawFan(); // el ancho del gráfico depende de que esté visible
+        window.dispatchEvent(new CustomEvent('view-change', { detail: view }));
     }
 
     let resizeTimer = null;
@@ -842,12 +851,12 @@
         document.querySelectorAll('.view-tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.view)));
         let view = 'forum';
         try { view = localStorage.getItem('tradingDesk.view') || 'forum'; } catch (e) { /* sin almacenamiento */ }
-        showView(window.__forumOffline ? 'desk' : view);
+        showView(window.__forumOffline && view === 'forum' ? 'desk' : view);
         window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawFan, 150); });
         loadFromServer(true); // si la app se sirve desde la raíz del proyecto, lee ./trader/ sola
     }
 
-    window.TradingDesk = { showView, tradeBadgeHtml, tradeDetailHtml, loadSample, reload: () => loadFromServer(false) };
+    window.TradingDesk = { showView, tradeBadgeHtml, tradeDetailHtml, loadSample, reload: () => loadFromServer(false), getPlan: () => get('plan') };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();

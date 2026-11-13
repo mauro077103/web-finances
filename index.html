@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Foro de Inversores y Mesa de Trading</title>
+    <!-- PWA: instalable en móvil y ordenador -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="web-finances">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <!-- Tailwind CSS CDN para el estilo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -41,7 +50,7 @@
             transform: scaleX(1.1);
         }
         /* Pestañas principales Foro / Mesa de Trading */
-        .view-tab { padding: .5rem 1rem; color: #94a3b8; border-bottom: 2px solid transparent; font-weight: 600; }
+        .view-tab { padding: .5rem .75rem; color: #94a3b8; border-bottom: 2px solid transparent; font-weight: 600; white-space: nowrap; }
         .view-tab:hover { color: #e2e8f0; }
         .view-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
         .desk-card { background: #334155; border-radius: .75rem; padding: 1rem; }
@@ -50,25 +59,26 @@
         .drop-active { outline: 2px dashed #60a5fa; outline-offset: 4px; }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-200 min-h-screen flex flex-col items-center py-10">
+<body class="bg-slate-900 text-slate-200 min-h-screen flex flex-col items-center py-6 md:py-10">
 
     <!-- Contenedor para mensajes de la aplicación (éxito/error) -->
     <div id="message-box" class="fixed top-5 right-5 z-50"></div>
 
     <!-- Contenedor principal para el foro, oculto hasta que el usuario se autentique -->
-    <div id="app-container" class="container mx-auto px-4 max-w-4xl hidden">
+    <div id="app-container" class="container mx-auto px-4 max-w-6xl hidden">
         <header class="text-center mb-10">
-            <h1 class="text-4xl md:text-5xl font-bold text-white mb-2">Foro de Inversores: Cultismos y la Cultura</h1>
+            <h1 class="text-3xl md:text-5xl font-bold text-white mb-2">Foro de Inversores: Cultismos y la Cultura</h1>
             <p class="text-lg text-slate-400">
                 <span id="welcome-message"></span>, bienvenido a un espacio para explorar oportunidades de inversión.
             </p>
         </header>
 
-        <main class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-10">
+        <main class="bg-slate-800 rounded-xl shadow-lg p-3 sm:p-6 md:p-10">
             <!-- Pestañas principales -->
-            <nav class="flex gap-2 mb-6 border-b border-slate-700" role="tablist">
+            <nav class="flex gap-1 sm:gap-2 mb-6 border-b border-slate-700 overflow-x-auto" role="tablist">
                 <button type="button" class="view-tab active" data-view="forum" role="tab">Foro</button>
                 <button type="button" class="view-tab" data-view="desk" role="tab">Mesa de Trading</button>
+                <button type="button" class="view-tab" data-view="mt5" role="tab">MetaTrader<span class="hidden sm:inline"> en vivo</span></button>
             </nav>
 
             <div id="forum-offline-notice" class="hidden mb-6 rounded-lg bg-amber-900/40 border border-amber-700 p-4 text-amber-100 text-sm">
@@ -163,6 +173,9 @@
 
             <!-- Mesa de Trading: lee los archivos trader/*.json que escriben las skills /trader-* de Claude -->
             <section id="desk-section" class="hidden" aria-label="Mesa de Trading"></section>
+
+            <!-- MetaTrader 5 en tiempo real a través del puente local bridge/server.py -->
+            <section id="mt5-section" class="hidden" aria-label="MetaTrader en vivo"></section>
         </main>
     </div>
 
@@ -235,6 +248,13 @@
 
     <!-- Mesa de Trading (independiente de Firebase) -->
     <script src="trading-desk.js"></script>
+    <script src="mt5.js"></script>
+    <script>
+        // Service worker (PWA): solo en contexto seguro (https o localhost).
+        if ('serviceWorker' in navigator && window.isSecureContext) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+        }
+    </script>
 
     <!-- Carga los SDKs de Firebase -->
     <script type="module">
