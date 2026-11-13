@@ -1,0 +1,3 @@
+# Datos personales que escriben las skills /trader-* (órdenes, límites, cartera, tu email para la SEC).
+# La Mesa de Trading los lee en local; no se suben al repositorio.
+trader/

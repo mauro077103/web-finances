@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Foro de Inversores sobre Cultismos</title>
+    <title>Foro de Inversores y Mesa de Trading</title>
     <!-- Tailwind CSS CDN para el estilo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -40,6 +40,14 @@
         .back-icon:hover {
             transform: scaleX(1.1);
         }
+        /* Pestañas principales Foro / Mesa de Trading */
+        .view-tab { padding: .5rem 1rem; color: #94a3b8; border-bottom: 2px solid transparent; font-weight: 600; }
+        .view-tab:hover { color: #e2e8f0; }
+        .view-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+        .desk-card { background: #334155; border-radius: .75rem; padding: 1rem; }
+        .desk-card h3 { font-weight: 700; color: #fff; margin-bottom: .5rem; }
+        .num { font-variant-numeric: tabular-nums; }
+        .drop-active { outline: 2px dashed #60a5fa; outline-offset: 4px; }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-200 min-h-screen flex flex-col items-center py-10">
@@ -57,6 +65,18 @@
         </header>
 
         <main class="bg-slate-800 rounded-xl shadow-lg p-6 md:p-10">
+            <!-- Pestañas principales -->
+            <nav class="flex gap-2 mb-6 border-b border-slate-700" role="tablist">
+                <button type="button" class="view-tab active" data-view="forum" role="tab">Foro</button>
+                <button type="button" class="view-tab" data-view="desk" role="tab">Mesa de Trading</button>
+            </nav>
+
+            <div id="forum-offline-notice" class="hidden mb-6 rounded-lg bg-amber-900/40 border border-amber-700 p-4 text-amber-100 text-sm">
+                El foro necesita Firebase y no hay configuración (<code>__firebase_config</code> o <code>window.FIREBASE_CONFIG</code>).
+                La <b>Mesa de Trading</b> funciona igualmente: es 100&nbsp;% local.
+            </div>
+
+            <section id="forum-section">
             <!-- Navegación por dropdown -->
             <div class="mb-6">
                 <label for="tab-select" class="block text-sm font-medium text-slate-300 mb-2">Selecciona una categoría:</label>
@@ -101,6 +121,8 @@
                             <textarea id="motivation" name="motivation" rows="2" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"></textarea>
                         </div>
                     </div>
+                    <!-- Plan de trading adjunto desde la Mesa de Trading -->
+                    <div id="attached-trade" class="hidden"></div>
                     <div>
                         <label for="titulo" class="block text-sm font-medium text-slate-300">Título</label>
                         <input type="text" id="titulo" name="titulo" class="mt-1 block w-full rounded-md border-slate-600 bg-slate-700 text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -137,6 +159,10 @@
                     </div>
                 </form>
             </div>
+            </section>
+
+            <!-- Mesa de Trading: lee los archivos trader/*.json que escriben las skills /trader-* de Claude -->
+            <section id="desk-section" class="hidden" aria-label="Mesa de Trading"></section>
         </main>
     </div>
 
@@ -207,6 +233,9 @@
         </div>
     </div>
 
+    <!-- Mesa de Trading (independiente de Firebase) -->
+    <script src="trading-desk.js"></script>
+
     <!-- Carga los SDKs de Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -214,10 +243,34 @@
         import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, where, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Variables globales proporcionadas por el entorno
+        // También acepta window.FIREBASE_CONFIG para usar la app fuera del entorno que inyecta __firebase_config.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : (window.FIREBASE_CONFIG || {});
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
+        const firebaseReady = Boolean(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
+
+        // Escapa texto de usuarios antes de insertarlo con innerHTML (evita XSS).
+        const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        // Hash SHA-256 de la contraseña (antes se guardaba en texto plano).
+        async function hashPassword(password) {
+            const data = new TextEncoder().encode(`${appId}:${password}`);
+            const buf = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Sin configuración de Firebase: el foro no puede funcionar, pero la Mesa de Trading sí (es 100% local).
+        if (!firebaseReady) {
+            document.getElementById('app-container').classList.remove('hidden');
+            document.getElementById('welcome-message').textContent = 'Hola';
+            document.getElementById('forum-section').classList.add('hidden');
+            window.__forumOffline = true;
+            window.TradingDesk && window.TradingDesk.showView('desk');
+            throw new Error('Firebase no configurado: solo está disponible la Mesa de Trading.');
+        }
+
         // Inicializar Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -262,6 +315,42 @@
         
         // Modo del formulario de autenticación
         let isRegisterMode = false;
+
+        // ---- Integración con la Mesa de Trading (trading-desk.js) ----
+        let attachedTrade = null;
+        const tradeBadgeHtml = (t) => window.TradingDesk ? window.TradingDesk.tradeBadgeHtml(t) : '';
+        const tradeDetailHtml = (t) => window.TradingDesk ? window.TradingDesk.tradeDetailHtml(t) : '';
+
+        function renderAttachedTrade() {
+            const box = document.getElementById('attached-trade');
+            if (!attachedTrade) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+            box.classList.remove('hidden');
+            box.innerHTML = `
+                <div class="rounded-lg border border-blue-700 bg-slate-900/60 p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-blue-300">Plan de trading adjunto</span>
+                        <button type="button" id="detach-trade" class="text-xs text-slate-400 hover:text-white">Quitar</button>
+                    </div>
+                    ${tradeDetailHtml(attachedTrade)}
+                </div>`;
+            document.getElementById('detach-trade').addEventListener('click', () => { attachedTrade = null; renderAttachedTrade(); });
+        }
+
+        // La Mesa de Trading pide compartir un plan: lo adjuntamos al formulario de nueva discusión.
+        window.addEventListener('trading-desk:share', (e) => {
+            if (!userName) { showMessage('Inicia sesión para compartir en el foro.', 'error'); return; }
+            const { trade, title, message } = e.detail;
+            attachedTrade = trade;
+            pendingDiscussionCategory = 'trading';
+            discussionCategorySelect.value = 'trading';
+            discussionCategorySelect.dispatchEvent(new Event('change'));
+            document.getElementById('titulo').value = title;
+            document.getElementById('mensaje').value = message;
+            renderAttachedTrade();
+            window.TradingDesk.showView('forum');
+            document.getElementById('new-discussion-form').scrollIntoView({ behavior: 'smooth' });
+            showMessage('Plan adjuntado. Revisa el texto y pulsa Publicar.', 'info');
+        });
 
         // Función para mostrar mensajes de estado
         function showMessage(message, type = 'info') {
@@ -351,7 +440,13 @@
             if (userDocSnap.exists()) {
                 // Modo de inicio de sesión
                 const userData = userDocSnap.data();
-                if (userData.password === password) {
+                const passwordHash = await hashPassword(password);
+                const legacyMatch = userData.password && userData.password === password;
+                if (userData.passwordHash === passwordHash || legacyMatch) {
+                    if (legacyMatch) {
+                        // Migra cuentas antiguas: guarda el hash y borra la contraseña en texto plano.
+                        await setDoc(userDocRef, { ...userData, password: null, passwordHash }).catch(console.error);
+                    }
                     // Contraseña coincide, permite el acceso
                     userName = userData.name;
                     userProfession = userData.profession;
@@ -375,8 +470,9 @@
                 
                 try {
                     // Guarda el perfil privado del usuario
-                    // NOTA: Almacenar contraseñas en texto plano no es seguro. Para una aplicación real, se debería usar hashing.
-                    await setDoc(userDocRef, { name: name, password: password, profession: profession, investorStatus: status, userId: userId });
+                    // Solo se guarda el hash de la contraseña, nunca el texto plano.
+                    const passwordHash = await hashPassword(password);
+                    await setDoc(userDocRef, { name: name, passwordHash, profession: profession, investorStatus: status, userId: userId });
 
                     // Guarda una versión pública del perfil
                     await setDoc(publicUserDocRef, { name: name, investorStatus: status, userId: userId });
@@ -439,8 +535,12 @@
                         targetUserId: isInvestorQuestion ? targetUserId : null,
                         motivation: isInvestorQuestion ? motivation : null,
                         numComments: 0,
-                        uniqueCommenters: {}
+                        uniqueCommenters: {},
+                        // Plan de trading adjunto desde la Mesa de Trading (solo si la categoría es 'trading')
+                        trade: category === 'trading' && attachedTrade ? attachedTrade : null
                     });
+                    attachedTrade = null;
+                    renderAttachedTrade();
                     console.log("Document written with ID: ", docRef.id);
                     discussionForm.reset();
                     showMessage('¡Discusión publicada con éxito!', 'success');
@@ -554,8 +654,8 @@
                 const voteStatus = userHasVoted ? `(Ya votaste: ${proposal.votes.voters[userId] === 'yes' ? 'Sí' : 'No'})` : '';
 
                 proposalEl.innerHTML = `
-                    <h3 class="text-xl font-semibold text-white">${proposal.title}</h3>
-                    <p class="text-slate-400 text-sm mt-1">Propuesta por ${proposal.author} - <span id="countdown-${proposal.id}"></span></p>
+                    <h3 class="text-xl font-semibold text-white">${esc(proposal.title)}</h3>
+                    <p class="text-slate-400 text-sm mt-1">Propuesta por ${esc(proposal.author)} - <span id="countdown-${proposal.id}"></span></p>
                     <div class="mt-4 flex items-center justify-between">
                         <div class="flex-1">
                             <p class="text-green-400 font-bold">${yesPercentage.toFixed(0)}% Sí</p>
@@ -596,58 +696,64 @@
                     const vote = e.target.dataset.vote;
 
                     const proposalDocRef = doc(db, `artifacts/${appId}/public/data/category_proposals`, proposalId);
-                    const proposalDocSnap = await getDoc(proposalDocRef);
-                    if (proposalDocSnap.exists()) {
-                        const proposalData = proposalDocSnap.data();
-                        if (proposalData.votes.voters && proposalData.votes.voters[userId]) {
-                            showMessage('Ya has votado en esta propuesta.', 'info');
-                            return;
-                        }
-
-                        const newVotes = { ...proposalData.votes };
-                        newVotes[vote] = (newVotes[vote] || 0) + 1;
-                        newVotes.voters[userId] = vote;
-
-                        try {
-                            await updateDoc(proposalDocRef, { votes: newVotes });
-                            showMessage('¡Voto registrado con éxito!', 'success');
-                        } catch (e) {
-                            console.error('Error al registrar el voto:', e);
-                            showMessage('Error al registrar tu voto.', 'error');
-                        }
+                    try {
+                        // Transacción: dos votos simultáneos ya no se pisan entre sí.
+                        const result = await runTransaction(db, async (transaction) => {
+                            const snap = await transaction.get(proposalDocRef);
+                            if (!snap.exists()) return 'missing';
+                            const votes = snap.data().votes || { yes: 0, no: 0, voters: {} };
+                            const voters = { ...(votes.voters || {}) };
+                            if (voters[userId]) return 'already';
+                            voters[userId] = vote;
+                            transaction.update(proposalDocRef, {
+                                votes: { ...votes, [vote]: (votes[vote] || 0) + 1, voters }
+                            });
+                            return 'ok';
+                        });
+                        if (result === 'already') showMessage('Ya has votado en esta propuesta.', 'info');
+                        else if (result === 'ok') showMessage('¡Voto registrado con éxito!', 'success');
+                    } catch (e) {
+                        console.error('Error al registrar el voto:', e);
+                        showMessage('Error al registrar tu voto.', 'error');
                     }
                 });
             });
         }
         
         async function checkAndFinalizeProposal(docId, votes, title, label) {
-            const totalVotes = votes.yes + votes.no;
-            const yesPercentage = totalVotes > 0 ? (votes.yes / totalVotes) * 100 : 0;
-            
             const proposalDocRef = doc(db, `artifacts/${appId}/public/data/category_proposals`, docId);
-            
-            if (yesPercentage >= 70) {
-                try {
-                    await addDoc(collection(db, `artifacts/${appId}/public/data/categories`), {
-                        id: title.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
-                        title: title,
-                        label: label
-                    });
-                    await deleteDoc(proposalDocRef);
-                    showMessage(`¡La categoría "${title}" ha sido aprobada y añadida al foro!`, 'success');
-                } catch (e) {
-                    console.error('Error al finalizar la propuesta:', e);
-                    showMessage('Ocurrió un error al añadir la nueva categoría.', 'error');
-                }
-            } else {
-                await deleteDoc(proposalDocRef);
-                showMessage(`La propuesta "${title}" no alcanzó el 70% de votos y no ha sido aprobada.`, 'info');
+            const categoryId = title.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+            try {
+                // Transacción: si varios navegadores cierran la misma propuesta a la vez,
+                // solo uno la procesa (antes se podían crear categorías duplicadas).
+                const outcome = await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(proposalDocRef);
+                    if (!snap.exists()) return null;
+                    const v = snap.data().votes || { yes: 0, no: 0 };
+                    const total = (v.yes || 0) + (v.no || 0);
+                    const approved = total > 0 && (v.yes / total) * 100 >= 70;
+                    if (approved) {
+                        transaction.set(doc(db, `artifacts/${appId}/public/data/categories`, categoryId), {
+                            id: categoryId, title, label
+                        });
+                    }
+                    transaction.delete(proposalDocRef);
+                    return approved ? 'approved' : 'rejected';
+                });
+                if (outcome === 'approved') showMessage(`¡La categoría "${title}" ha sido aprobada y añadida al foro!`, 'success');
+                else if (outcome === 'rejected') showMessage(`La propuesta "${title}" no alcanzó el 70% de votos y no ha sido aprobada.`, 'info');
+            } catch (e) {
+                console.error('Error al finalizar la propuesta:', e);
+                showMessage('Ocurrió un error al cerrar la propuesta.', 'error');
             }
         }
 
         // Renderiza el select de navegación
         let allCategories = [];
+        let pendingDiscussionCategory = null;
         function renderCategories(categories) {
+            const previousTab = tabSelect.value;
             tabSelect.innerHTML = '';
             discussionCategorySelect.innerHTML = '';
             tabContent.innerHTML = '';
@@ -660,10 +766,13 @@
                 { id: 'duracion', title: 'Por Duración', label: 'Inversiones según Duración' },
                 { id: 'margen', title: 'Por Margen de Beneficio', label: 'Inversiones según Margen de Beneficio' },
                 { id: 'riesgo', title: 'Por Riesgo', label: 'Inversiones según Riesgo' },
-                ...categories
+                { id: 'trading', title: 'Ideas de Trading', label: 'Ideas de Day Trading (planes compartidos desde la Mesa de Trading)' },
+                // Evita duplicar categorías por defecto si alguien las propone otra vez.
+                ...categories.filter(c => c && c.id && !['all_discussions', 'investor_questions', 'capital', 'duracion', 'margen', 'riesgo', 'trading'].includes(c.id))
             ];
+            const activeTab = allCategories.some(c => c.id === previousTab) ? previousTab : 'all_discussions';
 
-            allCategories.forEach((cat, index) => {
+            allCategories.forEach((cat) => {
                 const option = document.createElement('option');
                 option.value = cat.id;
                 option.textContent = cat.title;
@@ -676,27 +785,32 @@
 
                 const pane = document.createElement('div');
                 pane.id = `content-${cat.id}`;
-                pane.className = `tab-pane ${index === 0 ? '' : 'hidden'}`;
-                pane.innerHTML = `<h2 class="text-2xl font-bold text-white mb-6">${cat.label}</h2><div class="space-y-6 discussions-container" id="discussions-${cat.id}"></div>`;
+                pane.className = `tab-pane ${cat.id === activeTab ? '' : 'hidden'}`;
+                pane.innerHTML = `<h2 class="text-2xl font-bold text-white mb-6">${esc(cat.label)}</h2><div class="space-y-6 discussions-container" id="discussions-${esc(cat.id)}"></div>`;
                 tabContent.appendChild(pane);
             });
-            
-            tabSelect.addEventListener('change', (e) => {
-                const categoryId = e.target.value;
-                document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
-                const activePane = document.getElementById(`content-${categoryId}`);
-                activePane.classList.remove('hidden');
 
-                if (categoryId === 'investor_questions') {
-                     renderInvestorQuestionsPane();
-                } else {
-                    renderDiscussionsForCategory(categoryId, allDiscussionsData);
-                }
-            });
-
-             // Renderiza la vista inicial
-            renderDiscussionsForCategory('all_discussions', allDiscussionsData);
+            tabSelect.value = activeTab;
+            if (pendingDiscussionCategory && allCategories.some(c => c.id === pendingDiscussionCategory)) {
+                discussionCategorySelect.value = pendingDiscussionCategory;
+            }
+            showTab(activeTab);
         }
+
+        function showTab(categoryId) {
+            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+            const activePane = document.getElementById(`content-${categoryId}`);
+            if (!activePane) return;
+            activePane.classList.remove('hidden');
+            if (categoryId === 'investor_questions') {
+                renderInvestorQuestionsPane();
+            } else {
+                renderDiscussionsForCategory(categoryId, allDiscussionsData);
+            }
+        }
+
+        // Se registra UNA sola vez (antes se añadía un listener nuevo cada vez que cambiaban las categorías).
+        tabSelect.addEventListener('change', (e) => showTab(e.target.value));
 
         // Renderiza el panel de "Preguntas a Inversores" con filtros
         function renderInvestorQuestionsPane() {
@@ -783,14 +897,16 @@
             discussionEl.innerHTML = `
                 ${commentCounter}
                 ${isPrivateTag}
-                <h3 class="text-lg font-semibold text-white mt-4">${discussion.title}</h3>
-                <p class="text-slate-400 text-sm mt-1">por ${discussion.author} (${discussion.investorStatus}) - ${dateText}</p>
-                <p class="text-slate-500 mt-2 line-clamp-2">${discussion.message}</p>
+                <h3 class="text-lg font-semibold text-white mt-4">${esc(discussion.title)}</h3>
+                <p class="text-slate-400 text-sm mt-1">por ${esc(discussion.author)} (${esc(discussion.investorStatus)}) - ${esc(dateText)}</p>
+                ${discussion.trade ? tradeBadgeHtml(discussion.trade) : ''}
+                <p class="text-slate-500 mt-2 line-clamp-2">${esc(discussion.message)}</p>
             `;
             return discussionEl;
         }
 
         // Muestra la vista de discusión detallada
+        let unsubscribeComments = null;
         async function showDiscussion(discussionId) {
             currentDiscussionId = discussionId;
             appContainer.classList.add('hidden');
@@ -807,7 +923,7 @@
                 if (discussion.motivation) {
                     const targetInvestor = allUsers.find(u => u.userId === discussion.targetUserId);
                     const targetInvestorName = targetInvestor ? targetInvestor.name : 'Inversor Desconocido';
-                    motivationHtml = `<p class="text-slate-400 mt-4 italic">Pregunta dirigida a ${targetInvestorName}: "${discussion.motivation}"</p>`;
+                    motivationHtml = `<p class="text-slate-400 mt-4 italic">Pregunta dirigida a ${esc(targetInvestorName)}: "${esc(discussion.motivation)}"</p>`;
                 }
 
                 let makePublicButton = '';
@@ -816,9 +932,10 @@
                 }
                 
                 discussionContent.innerHTML = `
-                    <h2 class="text-3xl font-bold text-white mb-2">${discussion.title}</h2>
-                    <p class="text-slate-400 text-sm mb-4">por ${discussion.author} (${discussion.investorStatus}, ${discussion.authorProfession}) - ${dateText}</p>
-                    <p class="text-slate-300 mt-2">${discussion.message}</p>
+                    <h2 class="text-3xl font-bold text-white mb-2">${esc(discussion.title)}</h2>
+                    <p class="text-slate-400 text-sm mb-4">por ${esc(discussion.author)} (${esc(discussion.investorStatus)}, ${esc(discussion.authorProfession)}) - ${esc(dateText)}</p>
+                    ${discussion.trade ? tradeDetailHtml(discussion.trade) : ''}
+                    <p class="text-slate-300 mt-2 whitespace-pre-line">${esc(discussion.message)}</p>
                     ${motivationHtml}
                     ${makePublicButton}
                 `;
@@ -837,8 +954,9 @@
                     });
                 }
                 
-                // Configura el listener de comentarios
-                onSnapshot(query(collection(db, `artifacts/${appId}/public/data/discussions/${discussionId}/comments`), orderBy('createdAt')), (snapshot) => {
+                // Configura el listener de comentarios (cancelando el de la discusión anterior)
+                if (unsubscribeComments) unsubscribeComments();
+                unsubscribeComments = onSnapshot(query(collection(db, `artifacts/${appId}/public/data/discussions/${discussionId}/comments`), orderBy('createdAt')), (snapshot) => {
                     renderComments(snapshot.docs.map(doc => doc.data()));
                 });
 
@@ -860,9 +978,9 @@
                 commentEl.className = 'bg-slate-700 rounded-lg p-3 shadow-sm';
                 const dateText = comment.createdAt && comment.createdAt.toDate ? comment.createdAt.toDate().toLocaleDateString() : 'Fecha desconocida';
                 commentEl.innerHTML = `
-                    <p class="text-sm font-semibold text-white">${comment.author} (${comment.investorStatus})</p>
-                    <p class="text-slate-400 text-xs">${comment.authorProfession} - ${dateText}</p>
-                    <p class="text-slate-300 mt-2">${comment.comment}</p>
+                    <p class="text-sm font-semibold text-white">${esc(comment.author)} (${esc(comment.investorStatus)})</p>
+                    <p class="text-slate-400 text-xs">${esc(comment.authorProfession)} - ${esc(dateText)}</p>
+                    <p class="text-slate-300 mt-2 whitespace-pre-line">${esc(comment.comment)}</p>
                 `;
                 commentsList.appendChild(commentEl);
             });
@@ -870,6 +988,8 @@
         
         // Maneja el botón de volver
         backButton.addEventListener('click', () => {
+            if (unsubscribeComments) { unsubscribeComments(); unsubscribeComments = null; }
+            currentDiscussionId = null;
             discussionView.classList.add('hidden');
             appContainer.classList.remove('hidden');
         });
