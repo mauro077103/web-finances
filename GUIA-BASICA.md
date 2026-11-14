@@ -2,6 +2,8 @@
 
 Esta guía es para **Windows** y no hace falta saber programar. Sigue los pasos en orden.
 
+**Para dejar el bot automático funcionando, usa la [Puesta en marcha](PUESTA-EN-MARCHA.md).**
+
 > Usa siempre una **cuenta DEMO** de MetaTrader mientras aprendes. La app no deja operar con dinero real
 > salvo que tú lo actives a propósito.
 
