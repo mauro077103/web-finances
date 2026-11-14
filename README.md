@@ -6,6 +6,8 @@ Funciona en ordenador y en móvil (se instala como app).
 > **No es asesoramiento financiero.** La mayoría de quienes hacen trading pierden dinero.
 > Empieza siempre con una **cuenta demo**. Por defecto nada puede operar en una cuenta real.
 
+**¿Primera vez? Empieza por la [Guía básica paso a paso](GUIA-BASICA.md).**
+
 ## Qué hay
 
 | Parte | Qué hace |
