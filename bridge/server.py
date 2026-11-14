@@ -46,7 +46,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = "1.0"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import analysts  # noqa: E402  (analistas y piloto automático, mismo directorio)
+
+VERSION = "1.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 TOKEN_FILE = os.path.join(HERE, ".token")
@@ -89,6 +92,7 @@ class Hub:
         self.event_seq = 0
         self.order_times = deque()
         self.next_id = 1
+        self.desk = None               # analysts.AnalystDesk
 
     # --- actualización desde la fuente ---
     def update(self, payload):
@@ -115,11 +119,16 @@ class Hub:
             self.events.append((self.event_seq, kind, data))
             self.version += 1
             self.lock.notify_all()
+        if kind == "bars" and self.desk:    # fuera del candado: los analistas usan el historial
+            self.desk.on_bars(data)
 
-    def snapshot(self):
+    def snapshot(self, desk=True):
+        # el estado de los analistas se lee fuera del candado del hub (evita bloqueos cruzados)
+        desk_state = self.desk.public() if (desk and self.desk) else None
         with self.lock:
             age = now() - self.last_push if self.last_push else None
             return {
+                "desk": desk_state,
                 "type": "state",
                 "source": self.source,
                 "connected": age is not None and age < EA_STALE_SECONDS,
@@ -216,7 +225,7 @@ def risk_money(sym, side, entry, sl, volume):
 
 
 def validate_order(hub, body):
-    snap = hub.snapshot()
+    snap = hub.snapshot(desk=False)
     limits = hub.limits
     if not snap["connected"]:
         return None, "MetaTrader no está conectado"
@@ -754,6 +763,21 @@ class Handler(BaseHTTPRequestHandler):
             if not sym or ";" in sym or "\n" in sym:
                 return self._send(422, {"error": "símbolo inválido"})
             return self._send(202, dispatch(hub, active, {"kind": "bars", "symbol": sym, "tf": tf, "count": count}))
+        # --- analistas y piloto automático ---
+        desk = hub.desk
+        if path == "/api/desk/settings":
+            return self._send(200, {"settings": desk.update_settings(body)})
+        if path == "/api/desk/analyst":
+            a, err = desk.update_analyst(body)
+            return self._send(422, {"error": err}) if err else self._send(200, a)
+        if path == "/api/desk/auto":
+            on = bool(body.get("on"))
+            if on and not body.get("confirm"):
+                return self._send(422, {"error": "Falta la confirmación para encender el piloto automático"})
+            return self._send(200, {"auto_on": desk.set_auto(on)})
+        if path == "/api/signal":
+            sig, err = desk.external_signal(body)
+            return self._send(422, {"error": err}) if err else self._send(202, sig)
         return self._send(404, {"error": "no encontrado"})
 
 
@@ -829,6 +853,10 @@ def main(argv=None):
         active = PythonMT5Source(hub, syms, a.max_risk, a.max_volume, a.allow_trading)
         active.start()
 
+    desk = analysts.AnalystDesk(hub, dispatch, validate_order, active, bool(a.allow_live), log)
+    hub.desk = desk
+    desk.start()
+
     host = a.host or ("0.0.0.0" if a.lan else "127.0.0.1")
     srv = Server((host, a.port), Handler)
     srv.hub, srv.active, srv.token = hub, active, token
@@ -847,7 +875,9 @@ def main(argv=None):
         print("             (MT5 > Herramientas > Opciones > Asesores Expertos > permitir WebRequest")
         print("              para http://127.0.0.1:%d)" % a.port)
     print(" Límites:    riesgo máx %.2f · %.2f lotes · %d órdenes/min · %s" % (
-        a.max_risk, a.max_volume, a.max_orders_per_minute, "cuentas REALES PERMITIDAS" if a.allow_live else "solo cuentas demo"))
+        hub.limits["max_risk"], hub.limits["max_volume"], a.max_orders_per_minute, "cuentas REALES PERMITIDAS" if a.allow_live else "solo cuentas demo"))
+    print(" Analistas:  %s · piloto automático APAGADO (se enciende desde la app)" % ", ".join(
+        an.name for an in analysts.BUILTIN.values()))
     print("=" * 66)
     try:
         srv.serve_forever()

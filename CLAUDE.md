@@ -11,10 +11,17 @@
   y `demo` (simulador). El EA habla con `/mt5/push`, `/mt5/result`, `/mt5/bars`; los comandos al EA van
   en texto plano `ORDER;id;...` (ver `ea_line`). Si cambias ese formato, cambia también `HandleCommand`
   en `mt5/WebFinancesBridge.mq5`.
+- `bridge/analysts.py`: analistas (estrategias) que viven en el puente, construyen velas con los ticks en
+  tiempo real y emiten señales al cierre de vela; piloto automático (`AnalystDesk`). Analistas externos
+  envían señales por `POST /api/signal` (`bridge/enviar_senal.py`). La app los conecta/desconecta y edita el
+  riesgo (`/api/desk/analyst`, `/api/desk/settings`, `/api/desk/auto`), guardado en `bridge/settings.json`.
 - Seguridad, mantenla así: stop loss obligatorio; riesgo y lotes máximos validados en el puente y otra
-  vez en el EA; cuentas reales bloqueadas salvo `--allow-live` y `AllowLiveAccount=true`; el EA no opera
-  salvo `AllowTrading=true`; toda orden se confirma en la app. El puente solo sirve los archivos de la app
+  vez en el EA (el techo del EA no se cambia desde la app); cuentas reales bloqueadas salvo `--allow-live` y
+  `AllowLiveAccount=true`; el EA no opera salvo `AllowTrading=true`. Las órdenes manuales se confirman en la
+  app; las automáticas solo salen con el piloto encendido desde la app (con confirmación), de analistas en
+  modo "automatico", y pasan por `validate_order`. El piloto arranca SIEMPRE apagado y se apaga solo al
+  alcanzar la pérdida máxima del día. El puente solo sirve los archivos de la app
   (nunca `bridge/`, `.git`, `.claude`) y `trader/` exige token.
-- `trader/` y `bridge/.token` contienen datos personales y están en `.gitignore`.
+- `trader/`, `bridge/.token` y `bridge/settings.json` contienen datos personales y están en `.gitignore`.
 - Todo texto de usuario, de Firestore o de MetaTrader se escapa con `esc()` antes de ir a `innerHTML`.
 - Prueba rápida: `python3 bridge/server.py --demo` y abrir la URL que imprime.

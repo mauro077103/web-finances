@@ -3,8 +3,12 @@
  * ------------------
  * Se conecta al puente local (bridge/server.py) por Server-Sent Events y muestra en tiempo real
  * lo que envía MetaTrader 5: cuenta, cotizaciones, gráfico de velas y posiciones. Las órdenes
- * se confirman aquí, el puente las valida (stop obligatorio, riesgo y volumen máximos) y el EA
- * de MetaTrader las vuelve a validar antes de enviarlas al bróker.
+ * manuales se confirman aquí; el puente las valida (stop obligatorio, riesgo y volumen máximos)
+ * y el EA de MetaTrader las vuelve a validar antes de enviarlas al bróker.
+ *
+ * Los analistas viven en el puente (bridge/analysts.py) y leen los precios en tiempo real. Desde
+ * aquí se conectan/desconectan, se ajusta el riesgo y se enciende el piloto automático, que solo
+ * opera con los analistas en modo "Automático" y dentro de esos límites.
  */
 (function () {
     'use strict';
@@ -26,6 +30,8 @@
     let otype = 'market';
     let chartHover = null;
     let rafPending = false;
+    let deskRev = -1;
+    let userClosed = false;
 
     // ---------- utilidades ----------
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -76,8 +82,19 @@
     }
 
     // ---------- conexión ----------
-    async function connect() {
+    function disconnect() {
+        userClosed = true;
         if (es) { es.close(); es = null; }
+        state = null;
+        deskRev = -1;
+        renderAll();
+        setStatus('off', 'Desconectado de la app (el puente y sus analistas siguen funcionando)');
+    }
+
+    async function connect() {
+        userClosed = false;
+        if (es) { es.close(); es = null; }
+        deskRev = -1;
         state = null;
         setStatus('connecting', 'Conectando…');
         if (!token()) { setStatus('off', 'Falta el token'); renderAll(); return; }
@@ -95,7 +112,8 @@
         es.addEventListener('state', (e) => { onState(JSON.parse(e.data)); });
         es.addEventListener('bars', (e) => onBars(JSON.parse(e.data)));
         es.addEventListener('result', (e) => onResult(JSON.parse(e.data)));
-        es.onerror = () => setStatus('connecting', 'Reconectando…');
+        es.addEventListener('signal', (e) => onSignal(JSON.parse(e.data)));
+        es.onerror = () => { if (!userClosed) setStatus('connecting', 'Reconectando…'); };
     }
 
     function onState(s) {
@@ -125,6 +143,15 @@
         if (what === null) return;
         toast(`${what}: ${ok ? 'hecho' : 'rechazado'} · ${r.message || ''}`, ok ? 'success' : 'error');
         notify(`web-finances · ${ok ? 'OK' : 'Rechazada'}`, `${what} ${r.message || ''}`);
+    }
+
+    function onSignal(g) {
+        if (g.kind === 'halt') { toast(g.message, 'error'); notify('web-finances · piloto automático apagado', g.message); return; }
+        if (g.status === 'ignorada') return;
+        const what = `${g.analyst_name}: ${g.side === 'buy' ? 'COMPRA' : 'VENTA'} ${g.symbol}`;
+        const type = g.status === 'enviada' ? 'success' : g.status === 'bloqueada' ? 'error' : 'info';
+        toast(`${what} · ${g.message || ''}`, type);
+        notify(`web-finances · señal ${g.status}`, `${what} SL ${g.sl}${g.tp ? ` TP ${g.tp}` : ''}`);
     }
 
     function requestBars() {
@@ -180,6 +207,7 @@
                 <div class="flex gap-2">
                     <button type="button" data-mt="notif" class="text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-3 py-2">🔔 Avisos</button>
                     <button type="button" data-mt="settings" class="text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-3 py-2">⚙ Conexión</button>
+                    ${state ? '<button type="button" data-mt="disconnect" class="text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-3 py-2">Desconectar</button>' : ''}
                 </div>
             </div>
 
@@ -202,6 +230,7 @@
             </form>
 
             <div id="mt-account" class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4"></div>
+            <div id="mt-auto" class="mb-4"></div>
 
             <div class="grid gap-4 lg:grid-cols-3">
                 <div class="desk-card lg:col-span-1 order-2 lg:order-1">
@@ -243,6 +272,8 @@
                 </table></div>
             </div>
 
+            ${renderDeskShell()}
+
             <div class="desk-card mt-4">
                 <h3>Actividad</h3>
                 <ul id="mt-log" class="text-xs space-y-1 max-h-48 overflow-y-auto"></ul>
@@ -262,6 +293,7 @@
             </dialog>
         `;
         wire();
+        deskRev = -1;
         renderLive();
         drawChart();
         setStatus(state ? (state.connected ? 'on' : 'connecting') : 'off',
@@ -317,6 +349,7 @@
                     <li>Copia <code>mt5/WebFinancesBridge.mq5</code> en <i>Archivo › Abrir carpeta de datos › MQL5/Experts</i> y compílalo en MetaEditor (F7).</li>
                     <li>En MT5: <i>Herramientas › Opciones › Asesores Expertos</i> → marca <i>Permitir WebRequest</i> y añade <code>http://127.0.0.1:8765</code>.</li>
                     <li>Arrastra el EA a cualquier gráfico y pega el token. Para operar desde aquí: <code>AllowTrading=true</code> y el botón <i>Algo Trading</i> activado. Las cuentas reales siguen bloqueadas salvo <code>AllowLiveAccount=true</code> y el puente con <code>--allow-live</code>.</li>
+                    <li>Para que opere solo: en <i>Analistas</i> conecta uno en modo <i>Automático</i>, ajusta <i>Tu riesgo</i> y pulsa <i>Encender piloto</i>.</li>
                     <li>En el móvil (misma WiFi) abre la dirección "Móvil" que imprime el puente y usa <i>Añadir a pantalla de inicio</i>.</li>
                 </ol>
                 <p class="text-xs text-slate-400 mt-3">¿Sin MetaTrader a mano? <code>python3 bridge/server.py --demo</code> arranca un simulador con precios en vivo.</p>
@@ -427,10 +460,242 @@
         const st = { pending: 'pendiente', sent: 'enviada a MT5', done: 'hecha', rejected: 'rechazada', expired: 'caducada' };
         $('#mt-log').innerHTML = cmds.filter(c => c.kind !== 'bars').map(c => `
             <li class="flex justify-between gap-2 border-t border-slate-600 pt-1">
-                <span class="text-slate-300">#${esc(c.id)} ${c.kind === 'order' ? `${esc(String(c.side).toUpperCase())} ${esc(c.volume)} ${esc(c.symbol)} SL ${esc(c.sl)}${c.tp ? ` TP ${esc(c.tp)}` : ''}` : c.kind === 'close' ? `Cerrar #${esc(c.ticket)}` : `Modificar #${esc(c.ticket)}`}
+                <span class="text-slate-300">#${esc(c.id)} ${c.origin ? `<span class="text-blue-300">[${esc(String(c.origin).replace('auto:', 'auto · '))}]</span> ` : ''}${c.kind === 'order' ? `${esc(String(c.side).toUpperCase())} ${esc(c.volume)} ${esc(c.symbol)} SL ${esc(c.sl)}${c.tp ? ` TP ${esc(c.tp)}` : ''}` : c.kind === 'close' ? `Cerrar #${esc(c.ticket)}` : `Modificar #${esc(c.ticket)}`}
                     ${c.message ? `<span class="text-slate-400">· ${esc(c.message)}</span>` : ''}</span>
                 <span class="${c.status === 'done' ? 'text-blue-300' : c.status === 'rejected' || c.status === 'expired' ? 'text-orange-300' : 'text-slate-400'} whitespace-nowrap">${esc(st[c.status] || c.status)}</span>
             </li>`).join('') || '<li class="text-slate-400">Nada todavía.</li>';
+
+        renderDesk();
+    }
+
+    // ---------- analistas, riesgo y piloto automático ----------
+    const SIG_STATUS = { enviada: 'Ejecutada sola', aviso: 'Aviso', bloqueada: 'Bloqueada', ignorada: 'Ignorada' };
+    const inputCls = 'mt-1 w-full rounded-md bg-slate-800 border-slate-600 text-white text-sm';
+
+    function renderDeskShell() {
+        return `
+            <div class="grid gap-4 lg:grid-cols-2 mt-4">
+                <div class="desk-card">
+                    <h3>Analistas</h3>
+                    <p class="text-xs text-slate-400 mb-3">Viven en el puente y leen los precios de MetaTrader en tiempo real, aunque cierres la app.
+                       Conéctalos y elige si solo te avisan o si operan solos con el piloto automático.</p>
+                    <div id="mt-analysts" class="space-y-3"></div>
+                </div>
+                <div class="desk-card">
+                    <h3>Tu riesgo</h3>
+                    <form id="mt-riskform" class="space-y-3" autocomplete="off"></form>
+                </div>
+            </div>
+            <div class="desk-card mt-4">
+                <h3>Señales de los analistas</h3>
+                <ul id="mt-signals" class="text-sm space-y-2 max-h-96 overflow-y-auto"></ul>
+            </div>`;
+    }
+
+    // Se reconstruye solo cuando cambia la configuración en el puente y no estás escribiendo en ella.
+    function renderDesk() {
+        const d = state && state.desk;
+        const box = $('#mt-analysts'), form = $('#mt-riskform');
+        if (!box || !form) return;
+        renderAutoBar(d);
+        if (!d) {
+            box.innerHTML = `<p class="text-sm text-slate-400">${state ? 'Este puente no tiene analistas: actualízalo.' : 'Conecta con el puente.'}</p>`;
+            form.innerHTML = '';
+            $('#mt-signals').innerHTML = '';
+            deskRev = -1;
+            return;
+        }
+        const editing = (box.contains(document.activeElement) || form.contains(document.activeElement)) && document.activeElement.tagName === 'INPUT';
+        if (d.rev !== deskRev && !editing) {
+            deskRev = d.rev;
+            box.innerHTML = d.analysts.map(analystHtml).join('');
+            form.innerHTML = riskFormHtml(d.settings);
+        }
+        // estado de cada analista
+        d.analysts.forEach(a => {
+            const el = box.querySelector(`[data-astatus="${CSS.escape(a.id)}"]`);
+            if (!el) return;
+            const st = Object.entries(a.status || {});
+            el.innerHTML = !a.enabled ? 'Desconectado' : a.kind === 'external' ? 'Conectado · esperando señales por /api/signal'
+                : !st.length ? '<span class="text-orange-300">Conectado, pero sin símbolos: añade alguno.</span>'
+                    : st.map(([sym, v]) => `<span class="inline-block mr-3"><b class="text-slate-200">${esc(sym)}</b> ${esc(v || '…')}</span>`).join('');
+        });
+        const ea = (state && state.ea) || {};
+        const cap = $('#mt-ea-cap');
+        if (cap) cap.textContent = ea.max_risk != null ? `Techo en MetaTrader (EA): ${money(ea.max_risk, state.account && state.account.currency)} y ${ea.max_volume} lotes por orden. Para subirlo, cambia MaxRiskPerTrade y MaxVolume en el EA.` : '';
+        // señales
+        const list = $('#mt-signals');
+        const sigs = d.signals || [];
+        const skey = sigs.map(g => `${g.id}:${g.status}`).join('|');
+        if (list.dataset.key !== skey) {
+            list.dataset.key = skey;
+            list.innerHTML = sigs.map(signalHtml).join('') || '<li class="text-slate-400 text-sm">Aún no hay señales. Conecta algún analista con símbolos.</li>';
+        }
+    }
+
+    function renderAutoBar(d) {
+        const el = $('#mt-auto');
+        if (!el) return;
+        if (!d) { el.innerHTML = ''; return; }
+        const s = d.settings, cur = state.account && state.account.currency;
+        const autos = d.analysts.filter(a => a.enabled && a.mode === 'automatico').length;
+        const eq = num(state.account && state.account.equity), start = num(d.day && d.day.start_equity);
+        const dayPl = eq !== null && start !== null ? eq - start : null;
+        const riskTxt = s.risk_mode === 'percent' ? `${s.risk_value} % del balance` : money(s.risk_value, cur);
+        const key = [d.auto_on, d.halted, autos, s.risk_mode, s.risk_value, s.max_daily_loss, d.day && d.day.trades, s.max_trades_day, dayPl === null ? '' : dayPl.toFixed(2)].join('|');
+        if (el.dataset.key === key) return;
+        el.dataset.key = key;
+        el.innerHTML = `
+            <div class="desk-card flex flex-wrap items-center justify-between gap-3" style="${d.auto_on ? 'box-shadow: inset 0 0 0 2px #60a5fa' : ''}">
+                <div class="min-w-0">
+                    <div class="text-white font-bold">Piloto automático: ${d.auto_on ? '<span class="text-blue-300">● ENCENDIDO</span>' : '<span class="text-slate-300">○ apagado</span>'}</div>
+                    <div class="text-xs text-slate-300 mt-1">${autos} analista${autos === 1 ? '' : 's'} en modo automático · riesgo ${esc(riskTxt)} por operación ·
+                        operaciones hoy ${esc(d.day && d.day.trades)}/${esc(s.max_trades_day)} ·
+                        resultado del día <b class="num">${dayPl === null ? '—' : `${dayPl > 0 ? '▲ ' : dayPl < 0 ? '▼ ' : ''}${signed(dayPl, cur)}`}</b> (se apaga al perder ${money(s.max_daily_loss, cur)})</div>
+                    ${d.halted ? `<div class="text-xs text-orange-300 mt-1">${esc(d.halted)}</div>` : ''}
+                </div>
+                <button type="button" data-mt="auto" class="flex-none font-bold rounded-lg px-4 py-2 text-white ${d.auto_on ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700'}">
+                    ${d.auto_on ? 'Apagar piloto' : 'Encender piloto'}</button>
+            </div>`;
+    }
+
+    function analystHtml(a) {
+        const params = (a.param_spec || []).map(p => `
+            <label class="block text-xs text-slate-400">${esc(p.label)}
+                <input type="number" step="any" min="${esc(p.min)}" max="${esc(p.max)}" data-param="${esc(p.key)}" value="${esc(a.params[p.key])}" class="${inputCls}">
+            </label>`).join('');
+        return `
+            <div class="rounded-lg bg-slate-800 p-3" data-analyst="${esc(a.id)}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="font-semibold text-white">${esc(a.name || a.id)} ${a.kind === 'external' ? '<span class="text-xs text-slate-400">(externo)</span>' : ''}</div>
+                        <div class="text-xs text-slate-400">${esc(a.description || '')}</div>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs text-slate-200 flex-none cursor-pointer">
+                        <input type="checkbox" data-f="enabled" ${a.enabled ? 'checked' : ''} class="rounded"> Conectado
+                    </label>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                    <label class="block text-xs text-slate-400">Modo
+                        <select data-f="mode" class="${inputCls}">
+                            <option value="avisos" ${a.mode === 'avisos' ? 'selected' : ''}>Solo avisos</option>
+                            <option value="automatico" ${a.mode === 'automatico' ? 'selected' : ''}>Automático</option>
+                        </select>
+                    </label>
+                    ${a.kind === 'builtin' ? `
+                    <label class="block text-xs text-slate-400 col-span-2">Símbolos (separados por comas)
+                        <input type="text" data-f="symbols" value="${esc((a.symbols || []).join(', '))}" placeholder="${esc(selected || 'EURUSD')}" class="${inputCls}">
+                    </label>
+                    <label class="block text-xs text-slate-400">Velas
+                        <select data-f="tf" class="${inputCls}">${['M1', 'M5', 'M15'].map(t => `<option ${a.tf === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
+                    </label>` : ''}
+                </div>
+                ${params ? `<details class="mt-2"><summary class="text-xs text-blue-300 cursor-pointer">Parámetros</summary><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">${params}</div></details>` : ''}
+                <div class="text-xs text-slate-400 mt-2" data-astatus="${esc(a.id)}"></div>
+            </div>`;
+    }
+
+    function riskFormHtml(s) {
+        const f = (key, label, val, extra = '') => `<label class="block text-xs text-slate-400">${label}
+            <input type="number" step="any" min="0" inputmode="decimal" name="${key}" value="${esc(val)}" class="${inputCls}" ${extra}></label>`;
+        return `
+            <div class="grid grid-cols-2 gap-2">
+                <label class="block text-xs text-slate-400">Riesgo por operación automática en
+                    <select name="risk_mode" class="${inputCls}">
+                        <option value="money" ${s.risk_mode === 'money' ? 'selected' : ''}>Dinero (divisa de la cuenta)</option>
+                        <option value="percent" ${s.risk_mode === 'percent' ? 'selected' : ''}>% del balance (máx. 5 %)</option>
+                    </select>
+                </label>
+                ${f('risk_value', 'Riesgo por operación', s.risk_value)}
+                ${f('max_risk', 'Pérdida máxima por operación (manual y auto)', s.max_risk)}
+                ${f('max_volume', 'Lotes máximos por orden', s.max_volume)}
+                ${f('max_daily_loss', 'Pérdida máxima del día (apaga el piloto)', s.max_daily_loss)}
+                ${f('max_positions', 'Posiciones abiertas a la vez', s.max_positions, 'step="1" min="1"')}
+                ${f('max_trades_day', 'Operaciones automáticas por día', s.max_trades_day, 'step="1" min="1"')}
+                ${f('min_stop_spreads', 'Distancia mínima del stop (× spread)', s.min_stop_spreads)}
+            </div>
+            <label class="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+                <input type="checkbox" name="breakeven" ${s.breakeven ? 'checked' : ''} class="rounded">
+                Mover el stop a la entrada cuando la operación gane 1R
+            </label>
+            <p id="mt-ea-cap" class="text-xs text-slate-400"></p>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 rounded-lg">Guardar riesgo</button>`;
+    }
+
+    function signalHtml(g) {
+        const d = (symInfo(g.symbol) || {}).d ?? 5;
+        const t = new Date(g.time * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const buy = g.side === 'buy';
+        const badge = { enviada: 'bg-blue-600', aviso: 'bg-slate-500', bloqueada: 'bg-orange-700', ignorada: 'bg-slate-700' }[g.status] || 'bg-slate-600';
+        const canUse = g.status === 'aviso' || g.status === 'bloqueada';
+        return `<li class="border-t border-slate-600 pt-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0">
+                    <span class="text-xs text-slate-400 num">${esc(t)}</span>
+                    <b class="text-white ml-1">${esc(g.analyst_name)}</b>
+                    <span class="ml-1 font-semibold" style="color:${buy ? COL.up : COL.down}">${buy ? '▲ Compra' : '▼ Venta'} ${esc(g.symbol)}</span>
+                    ${g.tf ? `<span class="text-xs text-slate-400">${esc(g.tf)}</span>` : ''}
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-white rounded-full px-2 py-0.5 ${badge}">${esc(SIG_STATUS[g.status] || g.status)}</span>
+                    ${canUse ? `<button type="button" data-usesig="${esc(g.id)}" class="text-xs bg-slate-600 hover:bg-slate-500 text-white rounded px-2 py-1">Al ticket</button>` : ''}
+                </div>
+            </div>
+            <div class="text-xs text-slate-300 num mt-1">Entrada ≈ ${px(g.entry, d)} · SL ${px(g.sl, d)} · TP ${g.tp ? px(g.tp, d) : '—'}${g.volume ? ` · ${esc(g.volume)} lotes · riesgo ${money(g.risk, state.account && state.account.currency)}` : ''}</div>
+            <div class="text-xs text-slate-400">${esc(g.reason || '')}${g.message ? ` · ${esc(g.message)}` : ''}</div>
+        </li>`;
+    }
+
+    async function saveAnalyst(card) {
+        const body = { id: card.dataset.analyst };
+        card.querySelectorAll('[data-f]').forEach(el => { body[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; });
+        const params = {};
+        card.querySelectorAll('[data-param]').forEach(el => { params[el.dataset.param] = Number(el.value); });
+        if (Object.keys(params).length) body.params = params;
+        if (body.enabled && body.mode === 'automatico' && !(state.desk && state.desk.auto_on)) toast('Modo automático guardado. Opera solo cuando enciendas el piloto automático.', 'info');
+        try { await api('/api/desk/analyst', body); } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function saveRisk(e) {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const body = { risk_mode: fd.get('risk_mode'), breakeven: fd.get('breakeven') === 'on' };
+        ['risk_value', 'max_risk', 'max_volume', 'max_daily_loss', 'max_positions', 'max_trades_day', 'min_stop_spreads'].forEach(k => { body[k] = Number(fd.get(k)); });
+        if (document.activeElement) document.activeElement.blur();
+        try { await api('/api/desk/settings', body); toast('Riesgo guardado en el puente.', 'success'); } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function toggleAuto() {
+        const d = state && state.desk;
+        if (!d) return;
+        if (d.auto_on) {
+            try { await api('/api/desk/auto', { on: false }); toast('Piloto automático apagado.', 'info'); } catch (e) { toast(e.message, 'error'); }
+            return;
+        }
+        const s = d.settings, cur = state.account && state.account.currency;
+        const autos = d.analysts.filter(a => a.enabled && a.mode === 'automatico').map(a => a.name || a.id);
+        const real = state.account && !state.account.demo;
+        const msg = `${real ? '⚠ CUENTA REAL: DINERO REAL.\n\n' : ''}El piloto automático abrirá operaciones SIN pedirte confirmación.\n\n` +
+            `Analistas en automático: ${autos.length ? autos.join(', ') : 'ninguno todavía'}\n` +
+            `Riesgo por operación: ${s.risk_mode === 'percent' ? `${s.risk_value} % del balance` : money(s.risk_value, cur)} (máx. ${money(s.max_risk, cur)})\n` +
+            `Se apaga solo al perder ${money(s.max_daily_loss, cur)} en el día.\nMáximo ${s.max_positions} posiciones y ${s.max_trades_day} operaciones al día.\n\n¿Encenderlo?`;
+        if (!confirm(msg)) return;
+        try { await api('/api/desk/auto', { on: true, confirm: true }); toast('Piloto automático encendido.', 'success'); } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // Lleva una señal (aviso o bloqueada) al ticket manual, con los lotes de tu riesgo.
+    function useSignal(id) {
+        const g = ((state.desk && state.desk.signals) || []).find(x => String(x.id) === String(id));
+        if (!g) return;
+        if (!symInfo(g.symbol)) { toast(`${g.symbol} no está en MetaTrader.`, 'error'); return; }
+        selectSymbol(g.symbol);
+        side = g.side; otype = 'market';
+        $('#mt-sl').value = g.sl ?? '';
+        $('#mt-tp').value = g.tp || '';
+        $('#mt-vol').value = g.volume || '';
+        renderLive();
+        $('#mt-ticket').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toast('Señal cargada en el ticket: revísala y confirma.', 'info');
     }
 
     // ---------- ticket ----------
@@ -644,6 +909,12 @@
             connect().then(renderAll);
         });
         root.querySelector('[data-mt="settings"]').addEventListener('click', () => $('#mt-settings').classList.toggle('hidden'));
+        const dc = root.querySelector('[data-mt="disconnect"]');
+        if (dc) dc.addEventListener('click', disconnect);
+        $('#mt-auto').addEventListener('click', (e) => { if (e.target.closest('[data-mt="auto"]')) toggleAuto(); });
+        $('#mt-analysts').addEventListener('change', (e) => { const card = e.target.closest('[data-analyst]'); if (card) saveAnalyst(card); });
+        $('#mt-riskform').addEventListener('submit', saveRisk);
+        $('#mt-signals').addEventListener('click', (e) => { const b = e.target.closest('[data-usesig]'); if (b) useSignal(b.dataset.usesig); });
         root.querySelector('[data-mt="notif"]').addEventListener('click', async () => {
             if (!('Notification' in window)) { toast('Este navegador no admite notificaciones.', 'error'); return; }
             const p = await Notification.requestPermission();

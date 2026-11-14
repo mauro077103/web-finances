@@ -16,6 +16,8 @@ Funciona en ordenador y en móvil (se instala como app).
 | `trading-desk.js` | Mesa de Trading: lee los archivos `trader/*.json` que generan las skills de Claude |
 | `mt5.js` | MetaTrader en vivo: cuenta, cotizaciones, gráfico de velas, órdenes y posiciones en tiempo real |
 | `bridge/server.py` | Puente local (Python, sin dependencias) entre MetaTrader 5 y la app |
+| `bridge/analysts.py` | Analistas (estrategias) y piloto automático: leen los precios en tiempo real y operan con tu riesgo |
+| `bridge/enviar_senal.py` | Para que tus scripts o Claude envíen señales como "analistas externos" |
 | `mt5/WebFinancesBridge.mq5` | Expert Advisor para MetaTrader 5 que envía los datos al puente |
 | `manifest.webmanifest`, `sw.js`, `icons/` | Para instalarla como app en el móvil y el ordenador (PWA) |
 | `.claude/skills/` | 116 skills de trading y finanzas para Claude Code (lista completa en [docs/SKILLS.md](docs/SKILLS.md)) |
@@ -69,7 +71,7 @@ Opciones útiles:
 | Opción | Para qué |
 | --- | --- |
 | `--max-risk 50` | Pérdida máxima por operación en el stop, en la divisa de la cuenta (por defecto 50) |
-| `--max-volume 1.0` | Lotes máximos por orden (por defecto 1.0) |
+| `--max-volume 1.0` | Lotes máximos por orden inicial (también editable en la app) |
 | `--max-orders-per-minute 6` | Freno contra clics repetidos |
 | `--allow-live` | Permite operar en cuentas **reales** (por defecto bloqueado) |
 | `--port 8765` | Puerto |
@@ -120,6 +122,48 @@ Cualquiera con el token puede operar tu cuenta: no lo compartas.
 
 "Tiempo real" significa los precios de tu bróker en MetaTrader, enviados cada 250 ms (ajustable con
 `IntervalMs`). La app se actualiza unas 7 veces por segundo.
+
+---
+
+## Analistas y piloto automático
+
+El puente es el **espacio de los analistas**: estrategias que leen cada precio que envía MetaTrader,
+construyen sus velas en tiempo real y, al cerrar cada vela, pueden dar una señal con entrada, stop y
+objetivo. Siguen funcionando aunque cierres la app o el móvil (mientras el puente y MetaTrader estén abiertos).
+
+| Analista | Señal |
+| --- | --- |
+| **Cruce de medias** | La media rápida cruza la lenta (9/21 por defecto) |
+| **Ruptura de rango** | Una vela cierra fuera del máximo/mínimo de las últimas 20 |
+| **Rebote RSI** | El RSI sale de sobreventa (30) o sobrecompra (70) |
+| **Externos** | Cualquier script o Claude, con `bridge/enviar_senal.py` o `POST /api/signal` |
+
+En la pestaña **MetaTrader en vivo**:
+
+1. **Analistas**: marca **Conectado**, escribe los símbolos (`EURUSD, XAUUSD`), elige velas (M1, M5, M15)
+   y el modo: **Solo avisos** (te avisa y con **Al ticket** la ejecutas tú) o **Automático**.
+2. **Tu riesgo**: riesgo por operación (dinero o % del balance), pérdida máxima por operación, lotes
+   máximos, **pérdida máxima del día**, posiciones a la vez, operaciones por día, distancia mínima del
+   stop y mover el stop a la entrada al ganar 1R. Se guarda en el puente (`bridge/settings.json`).
+3. **Encender piloto**: muestra un resumen y pide confirmación. A partir de ahí los analistas en
+   automático operan solos: el puente calcula los lotes con tu riesgo y la orden pasa los mismos
+   controles que una manual, y otra vez los del EA.
+
+Seguridad: el piloto **arranca siempre apagado** al iniciar el puente; se **apaga solo** al llegar a la
+pérdida máxima del día; una posición por símbolo; solo cuentas demo salvo `--allow-live`; y el techo de
+`MaxRiskPerTrade`/`MaxVolume` del EA no se puede subir desde la app. **Desconectar** cierra la app, no los analistas.
+
+Señal externa (por ejemplo, desde Claude tras `/trader-exit`):
+
+```bash
+python3 bridge/enviar_senal.py --analista claude --simbolo EURUSD --lado buy --sl 1.0820 --tp 1.0900 --motivo "Ruptura"
+```
+
+```bash
+python3 bridge/enviar_senal.py --analista claude --plan trader/plan.json --simbolo TSLA
+```
+
+El analista externo aparece en la app desconectado hasta que lo conectes.
 
 ---
 

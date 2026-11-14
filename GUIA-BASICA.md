@@ -124,6 +124,22 @@ Cada vez que quieras usarla:
 4. Pulsa **Revisar**, lee el resumen y **Confirma**.
 5. La operación aparece en **Posiciones abiertas**. Desde ahí puedes **Cerrar** o mover el stop a la entrada.
 
+### Para que opere solo (piloto automático)
+
+1. Baja hasta **Analistas**. En uno de ellos (por ejemplo **Ruptura de rango**):
+   - marca **Conectado**;
+   - en **Símbolos** escribe por ejemplo `EURUSD`;
+   - en **Modo** elige **Automático** (o **Solo avisos** si prefieres que solo te avise).
+2. En **Tu riesgo** pon cuánto arriesgas por operación (por ejemplo `20`) y la **pérdida máxima del día**
+   (por ejemplo `60`). Pulsa **Guardar riesgo**.
+3. Arriba, pulsa **Encender piloto** y acepta. Desde ese momento opera solo, con tu riesgo.
+4. Para pararlo: **Apagar piloto**. También se apaga solo si pierdes la pérdida máxima del día, y
+   siempre empieza apagado cuando vuelves a arrancar el puente.
+
+Los analistas siguen trabajando aunque cierres la app o el móvil, mientras el ordenador, MetaTrader y la
+ventana negra sigan abiertos. Para que opere solo, el robot necesita **AllowTrading = true** y el botón
+**Algo Trading** en verde.
+
 ---
 
 ## Si algo falla
@@ -136,6 +152,8 @@ Cada vez que quieras usarla:
 | "Token incorrecto" | Vuelve a copiar el token de la ventana negra en el robot y en la app |
 | "Trading desactivado" | Pon `AllowTrading = true` en el robot y activa **Algo Trading** |
 | El móvil no abre la app | Misma WiFi; puente arrancado con `--lan`; acepta el aviso del **firewall** de Windows (redes privadas) |
+| Un analista dice "calentando" | Está cargando velas; espera un poco |
+| Señal "Bloqueada" | Lee el motivo (ya hay posición en ese símbolo, stop muy cerca, límite diario...) |
 | "Orden rechazada por riesgo" | Acerca el stop o arriesga menos dinero |
 
 ¿Quieres más detalle? Mira el [README](README.md).

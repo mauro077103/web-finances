@@ -5,3 +5,7 @@ trader/
 # Token de acceso del puente MetaTrader (se genera al arrancar bridge/server.py)
 bridge/.token
 __pycache__/
+
+# Ajustes de riesgo y analistas guardados desde la app
+bridge/settings.json
+bridge/settings.json.tmp
