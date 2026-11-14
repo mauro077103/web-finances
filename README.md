@@ -73,6 +73,7 @@ Opciones útiles:
 | `--max-risk 50` | Pérdida máxima por operación en el stop, en la divisa de la cuenta (por defecto 50) |
 | `--max-volume 1.0` | Lotes máximos por orden inicial (también editable en la app) |
 | `--max-orders-per-minute 6` | Freno contra clics repetidos |
+| `--auto` | Arranca con el piloto automático **encendido** (opera solo con el comité) |
 | `--allow-live` | Permite operar en cuentas **reales** (por defecto bloqueado) |
 | `--port 8765` | Puerto |
 | `--source python` | Alternativa al EA en Windows: usa el paquete oficial `pip install MetaTrader5` (añade `--allow-trading` para operar) |
@@ -133,6 +134,7 @@ objetivo. Siguen funcionando aunque cierres la app o el móvil (mientras el puen
 
 | Analista | Señal |
 | --- | --- |
+| **Comité de analistas** (conectado y en automático por defecto) | 24 analistas (tendencia, momento, ruptura, reversión, patrones) votan en cada vela; si **≥ 75 %** de los votos van al mismo lado (con al menos 8 votos), crea **stop loss** (1,5 × ATR) y **take profit** (2R) y opera |
 | **Cruce de medias** | La media rápida cruza la lenta (9/21 por defecto) |
 | **Ruptura de rango** | Una vela cierra fuera del máximo/mínimo de las últimas 20 |
 | **Rebote RSI** | El RSI sale de sobreventa (30) o sobrecompra (70) |
@@ -149,7 +151,11 @@ En la pestaña **MetaTrader en vivo**:
    automático operan solos: el puente calcula los lotes con tu riesgo y la orden pasa los mismos
    controles que una manual, y otra vez los del EA.
 
-Seguridad: el piloto **arranca siempre apagado** al iniciar el puente; se **apaga solo** al llegar a la
+Para que opere solo desde el arranque, sin tocar la app: `python3 bridge/server.py --lan --auto`.
+Votar en el comité desde Claude o un script (cuenta como un analista más):
+`python3 bridge/enviar_senal.py --analista claude --simbolo EURUSD --lado buy --votar --minutos 60`.
+
+Seguridad: el piloto **arranca apagado** salvo con `--auto`; se **apaga solo** al llegar a la
 pérdida máxima del día; una posición por símbolo; solo cuentas demo salvo `--allow-live`; y el techo de
 `MaxRiskPerTrade`/`MaxVolume` del EA no se puede subir desde la app. **Desconectar** cierra la app, no los analistas.
 

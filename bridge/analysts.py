@@ -265,7 +265,11 @@ class RsiRebote(Analyst):
         return side, sl, tp, "RSI %.0f sale de %s" % (r[-1], "sobreventa" if side == "buy" else "sobrecompra")
 
 
-BUILTIN = {a.id: a for a in (CruceMedias(), Ruptura(), RsiRebote())}
+from committee import VOTERS, VOTER_IDS, Committee  # noqa: E402  (usa Analyst, ema, rsi, atr de arriba)
+
+COMMITTEE = Committee()
+BUILTIN = {a.id: a for a in (COMMITTEE, CruceMedias(), Ruptura(), RsiRebote())}
+COMMITTEE_MAX_SYMBOLS = 15
 
 
 # --------------------------------------------------------------------------------------------
@@ -287,7 +291,7 @@ DEFAULT_SETTINGS = {
 class AnalystDesk(threading.Thread):
     daemon = True
 
-    def __init__(self, hub, dispatch, validate, active, allow_live, log):
+    def __init__(self, hub, dispatch, validate, active, allow_live, log, auto_start=False):
         super().__init__()
         self.hub, self.dispatch, self.validate, self.active = hub, dispatch, validate, active
         self.allow_live = allow_live
@@ -301,10 +305,14 @@ class AnalystDesk(threading.Thread):
         for a in BUILTIN.values():
             self.analysts[a.id] = {"id": a.id, "kind": "builtin", "enabled": False, "mode": "avisos",
                                    "symbols": [], "tf": "M5", "params": {k: d for k, _, _, _, d in a.params}}
+        # el comité viene conectado y en automático: con el piloto encendido opera solo.
+        # Sin símbolos = todos los de MetaTrader (hasta 15).
+        self.analysts["comite"].update(enabled=True, mode="automatico", off=[])
+        self.ext_votes = {}          # símbolo -> {analista externo: (voto, caduca)}
         self.runtime = {}            # (analista, símbolo) -> {"last": t, "cool": n, "status": str}
         self.signals = deque(maxlen=60)
         self.signal_seq = 0
-        self.auto_on = False         # siempre apagado al arrancar
+        self.auto_on = bool(auto_start)   # apagado salvo que arranques el puente con --auto
         self.halted = ""
         self.day = None
         self.day_start_equity = None
@@ -405,6 +413,8 @@ class AnalystDesk(threading.Thread):
                         a["params"][k] = _clamp(body["params"][k], lo, hi, a["params"].get(k, d))
                 for k, _, _, _, d in spec:
                     a["params"].setdefault(k, d)
+                if a["id"] == "comite" and isinstance(body.get("off"), list):
+                    a["off"] = sorted({str(x) for x in body["off"]} & VOTER_IDS)
             if save:
                 self._save()
                 self._changed()
@@ -441,7 +451,11 @@ class AnalystDesk(threading.Thread):
                     an = BUILTIN[a["id"]]
                     item.update(name=an.name, description=an.description,
                                 param_spec=[{"key": k, "label": l, "min": lo, "max": hi} for k, l, lo, hi, _ in an.params])
-                    item["status"] = {s: (self.runtime.get((a["id"], s)) or {}).get("status", "") for s in a["symbols"]}
+                    item["status"] = {k[1]: rt.get("status", "") for k, rt in self.runtime.items() if k[0] == a["id"]}
+                    if a["id"] == "comite":
+                        item["voters"] = [{"id": v[0], "name": v[1], "family": v[2]} for v in VOTERS]
+                        item["tallies"] = {k[1]: rt["tally"] for k, rt in self.runtime.items()
+                                           if k[0] == "comite" and rt.get("tally")}
                 else:
                     item["description"] = "Analista externo: envía señales con POST /api/signal"
                     item["status"] = {}
@@ -490,7 +504,10 @@ class AnalystDesk(threading.Thread):
             for a in list(self.analysts.values()):
                 if a["kind"] != "builtin" or not a["enabled"]:
                     continue
-                for sym in a["symbols"]:
+                targets = a["symbols"]
+                if a["id"] == "comite" and not targets:
+                    targets = list(syms)[:COMMITTEE_MAX_SYMBOLS]
+                for sym in targets:
                     self._run_analyst(a, sym, syms.get(sym), snap)
             if self.settings["breakeven"]:
                 self._breakeven(snap, syms)
@@ -524,6 +541,8 @@ class AnalystDesk(threading.Thread):
             return
         an = BUILTIN[a["id"]]
         p = a["params"]
+        if an is COMMITTEE:
+            return self._run_committee(a, sym, info, snap, rt)
         need = an.needs(p)
         bars = self.bars.closed(sym, a["tf"])
         if len(bars) < need:
@@ -552,6 +571,81 @@ class AnalystDesk(threading.Thread):
         d = int(_num(info.get("d")) or 5)
         self.handle_signal(a, {"symbol": sym, "side": side, "sl": round(sl, d), "tp": round(tp, d),
                                "reason": reason, "tf": a["tf"]}, snap)
+
+    def _run_committee(self, a, sym, info, snap, rt):
+        p = a["params"]
+        bars = self.bars.closed(sym, a["tf"])
+        need = COMMITTEE.needs(p)
+        if len(bars) < need:
+            self._want_history(sym)
+            rt["status"] = "calentando %d/%d velas" % (len(bars), need)
+            return
+        last_t = bars[-1][0]
+        if last_t == rt["last"]:
+            return
+        rt["last"] = last_t
+        t = now()
+        ext = {}
+        for aid, (v, exp) in list(self.ext_votes.get(sym, {}).items()):
+            if exp < t:
+                del self.ext_votes[sym][aid]
+            elif (self.analysts.get(aid) or {}).get("enabled"):
+                ext[aid] = v
+        tally = COMMITTEE.tally(bars, p, set(a.get("off") or []), ext)
+        rt["tally"] = tally
+        side = tally["side"]
+        hora = time.strftime("%H:%M", time.localtime(last_t + TF_SEC[a["tf"]]))
+        if not side:
+            rt["prev_side"] = None
+            rt["status"] = "%s · compra %.0f %% · venta %.0f %% (%d votos, quórum %d)" % (
+                hora, tally["pct_buy"], tally["pct_sell"], tally["buy"] + tally["sell"], p["quorum"])
+            return
+        pct = tally["pct_buy"] if side == "buy" else tally["pct_sell"]
+        if rt.get("prev_side") == side:
+            # el consenso sigue: ya se actuó cuando se formó
+            rt["status"] = "%s · consenso de %s se mantiene (%.0f %%)" % (hora, "compra" if side == "buy" else "venta", pct)
+            return
+        rt["prev_side"] = side
+        a_ = atr(bars)
+        if not a_:
+            return
+        sl, tp = COMMITTEE.levels(side, _num(info.get("ask") if side == "buy" else info.get("bid")) or bars[-1][4],
+                                  a_ * p["atr_mult"], p["rr"])
+        d = int(_num(info.get("d")) or 5)
+        rt["status"] = "%s · ¡CONSENSO %s %.0f %%!" % (hora, "COMPRA" if side == "buy" else "VENTA", pct)
+        sig = self.handle_signal(a, {"symbol": sym, "side": side, "sl": round(sl, d), "tp": round(tp, d), "tf": a["tf"],
+                               "reason": "Comité: %.0f %% a favor (%d de %d votos)" % (
+                                   pct, max(tally["buy"], tally["sell"]), tally["buy"] + tally["sell"])}, snap)
+        # si se bloqueó por falta de hueco (máximo de posiciones, límite de órdenes), se reintenta en la
+        # próxima vela mientras el consenso siga; si ya hay posición en este símbolo, no.
+        msg = sig.get("message", "")
+        if sig.get("status") == "bloqueada" and ("posiciones abiertas o en camino (máximo" in msg or "Demasiadas órdenes" in msg):
+            rt["prev_side"] = None
+
+    def external_vote(self, body):
+        """Voto de un analista externo para el comité (Claude con las skills, tus scripts)."""
+        aid = str(body.get("analyst", "")).strip().lower()
+        if not EXTERNAL_ID.match(aid) or aid in BUILTIN:
+            return None, "analyst: usa 1-32 letras minúsculas, números, - o _"
+        v = {"buy": 1, "sell": -1, "neutral": 0}.get(body.get("side"))
+        if v is None:
+            return None, "side debe ser buy, sell o neutral"
+        sym = str(body.get("symbol", "")).strip()[:32]
+        if not sym or ";" in sym:
+            return None, "Falta symbol"
+        minutes = _clamp(body.get("minutes"), 1, 1440, 60)
+        with self.lock:
+            existed = aid in self.analysts
+            a = self._ensure_external(aid, body.get("name"))
+            if not a:
+                return None, "Demasiados analistas externos"
+            if not existed:
+                self.log("Nuevo analista externo '%s': conéctalo en la app para que su voto cuente" % aid)
+                self._save()
+                self._changed()
+            self.ext_votes.setdefault(sym, {})[aid] = (v, now() + minutes * 60)
+        return {"ok": True, "analyst": aid, "symbol": sym, "vote": body.get("side"), "minutes": minutes,
+                "counts": bool(a["enabled"])}, None
 
     # ---------------- señales ----------------
     def external_signal(self, body):

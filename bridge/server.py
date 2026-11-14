@@ -775,6 +775,9 @@ class Handler(BaseHTTPRequestHandler):
             if on and not body.get("confirm"):
                 return self._send(422, {"error": "Falta la confirmación para encender el piloto automático"})
             return self._send(200, {"auto_on": desk.set_auto(on)})
+        if path == "/api/vote":
+            res, err = desk.external_vote(body)
+            return self._send(422, {"error": err}) if err else self._send(200, res)
         if path == "/api/signal":
             sig, err = desk.external_signal(body)
             return self._send(422, {"error": err}) if err else self._send(202, sig)
@@ -834,6 +837,7 @@ def main(argv=None):
     ap.add_argument("--max-risk", type=float, default=50.0, help="pérdida máxima por operación en la divisa de la cuenta (por defecto 50)")
     ap.add_argument("--max-volume", type=float, default=1.0, help="lotes máximos por orden (por defecto 1.0)")
     ap.add_argument("--max-orders-per-minute", type=int, default=6)
+    ap.add_argument("--auto", action="store_true", help="arranca con el piloto automático ENCENDIDO")
     ap.add_argument("--token", default=None, help="token fijo (por defecto se genera en bridge/.token)")
     a = ap.parse_args(argv)
     if a.demo:
@@ -853,7 +857,7 @@ def main(argv=None):
         active = PythonMT5Source(hub, syms, a.max_risk, a.max_volume, a.allow_trading)
         active.start()
 
-    desk = analysts.AnalystDesk(hub, dispatch, validate_order, active, bool(a.allow_live), log)
+    desk = analysts.AnalystDesk(hub, dispatch, validate_order, active, bool(a.allow_live), log, auto_start=a.auto)
     hub.desk = desk
     desk.start()
 
@@ -876,8 +880,9 @@ def main(argv=None):
         print("              para http://127.0.0.1:%d)" % a.port)
     print(" Límites:    riesgo máx %.2f · %.2f lotes · %d órdenes/min · %s" % (
         hub.limits["max_risk"], hub.limits["max_volume"], a.max_orders_per_minute, "cuentas REALES PERMITIDAS" if a.allow_live else "solo cuentas demo"))
-    print(" Analistas:  %s · piloto automático APAGADO (se enciende desde la app)" % ", ".join(
-        an.name for an in analysts.BUILTIN.values()))
+    print(" Comité:     %d analistas votan; opera con %s%% o más de votos a favor" % (
+        len(analysts.VOTERS), int(desk.analysts["comite"]["params"]["umbral"])))
+    print(" Piloto:     %s" % ("ENCENDIDO: opera solo (--auto)" if a.auto else "apagado · enciéndelo en la app o arranca con --auto"))
     print("=" * 66)
     try:
         srv.serve_forever()

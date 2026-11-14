@@ -15,12 +15,14 @@
   tiempo real y emiten señales al cierre de vela; piloto automático (`AnalystDesk`). Analistas externos
   envían señales por `POST /api/signal` (`bridge/enviar_senal.py`). La app los conecta/desconecta y edita el
   riesgo (`/api/desk/analyst`, `/api/desk/settings`, `/api/desk/auto`), guardado en `bridge/settings.json`.
+- `bridge/committee.py`: comité de 24 analistas que votan cada vela (+1/-1/0); con ≥ umbral (75 %) de los votos
+  emitidos y quórum, da la señal con SL = N×ATR y TP = R×SL. Externos votan con `POST /api/vote`.
 - Seguridad, mantenla así: stop loss obligatorio; riesgo y lotes máximos validados en el puente y otra
   vez en el EA (el techo del EA no se cambia desde la app); cuentas reales bloqueadas salvo `--allow-live` y
   `AllowLiveAccount=true`; el EA no opera salvo `AllowTrading=true`. Las órdenes manuales se confirman en la
   app; las automáticas solo salen con el piloto encendido desde la app (con confirmación), de analistas en
-  modo "automatico", y pasan por `validate_order`. El piloto arranca SIEMPRE apagado y se apaga solo al
-  alcanzar la pérdida máxima del día. El puente solo sirve los archivos de la app
+  modo "automatico", y pasan por `validate_order`. El piloto arranca apagado salvo `--auto` (decisión
+  explícita al arrancar) y se apaga solo al alcanzar la pérdida máxima del día. El puente solo sirve los archivos de la app
   (nunca `bridge/`, `.git`, `.claude`) y `trader/` exige token.
 - `trader/`, `bridge/.token` y `bridge/settings.json` contienen datos personales y están en `.gitignore`.
 - Todo texto de usuario, de Firestore o de MetaTrader se escapa con `esc()` antes de ir a `innerHTML`.

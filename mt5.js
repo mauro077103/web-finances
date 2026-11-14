@@ -478,7 +478,7 @@
                 <div class="desk-card">
                     <h3>Analistas</h3>
                     <p class="text-xs text-slate-400 mb-3">Viven en el puente y leen los precios de MetaTrader en tiempo real, aunque cierres la app.
-                       Conéctalos y elige si solo te avisan o si operan solos con el piloto automático.</p>
+                       El <b>comité</b> vota en cada vela: con el piloto encendido, cuando hay consenso crea stop loss y take profit y opera solo.</p>
                     <div id="mt-analysts" class="space-y-3"></div>
                 </div>
                 <div class="desk-card">
@@ -505,7 +505,7 @@
             deskRev = -1;
             return;
         }
-        const editing = (box.contains(document.activeElement) || form.contains(document.activeElement)) && document.activeElement.tagName === 'INPUT';
+        const editing = (box.contains(document.activeElement) || form.contains(document.activeElement)) && document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'checkbox';
         if (d.rev !== deskRev && !editing) {
             deskRev = d.rev;
             box.innerHTML = d.analysts.map(analystHtml).join('');
@@ -513,6 +513,11 @@
         }
         // estado de cada analista
         d.analysts.forEach(a => {
+            const tb = a.id === 'comite' && box.querySelector('[data-tally="comite"]');
+            if (tb) {
+                const tkey = JSON.stringify([a.enabled, a.params, a.tallies]);
+                if (tb.dataset.key !== tkey && !tb.querySelector('details[open]')) { tb.dataset.key = tkey; tb.innerHTML = tallyHtml(a); }
+            }
             const el = box.querySelector(`[data-astatus="${CSS.escape(a.id)}"]`);
             if (!el) return;
             const st = Object.entries(a.status || {});
@@ -583,16 +588,54 @@
                         </select>
                     </label>
                     ${a.kind === 'builtin' ? `
-                    <label class="block text-xs text-slate-400 col-span-2">Símbolos (separados por comas)
-                        <input type="text" data-f="symbols" value="${esc((a.symbols || []).join(', '))}" placeholder="${esc(selected || 'EURUSD')}" class="${inputCls}">
+                    <label class="block text-xs text-slate-400 col-span-2">${a.id === 'comite' ? 'Símbolos (vacío = todos los de MetaTrader)' : 'Símbolos (separados por comas)'}
+                        <input type="text" data-f="symbols" value="${esc((a.symbols || []).join(', '))}" placeholder="${esc(a.id === 'comite' ? 'todos' : (selected || 'EURUSD'))}" class="${inputCls}">
                     </label>
                     <label class="block text-xs text-slate-400">Velas
                         <select data-f="tf" class="${inputCls}">${['M1', 'M5', 'M15'].map(t => `<option ${a.tf === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
                     </label>` : ''}
                 </div>
-                ${params ? `<details class="mt-2"><summary class="text-xs text-blue-300 cursor-pointer">Parámetros</summary><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">${params}</div></details>` : ''}
-                <div class="text-xs text-slate-400 mt-2" data-astatus="${esc(a.id)}"></div>
+                ${params ? `<details class="mt-2" ${a.id === 'comite' ? 'open' : ''}><summary class="text-xs text-blue-300 cursor-pointer">Parámetros</summary><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">${params}</div></details>` : ''}
+                ${a.voters ? votersHtml(a) : ''}
+                ${a.id === 'comite' ? '<div class="mt-2" data-tally="comite"></div>' : `<div class="text-xs text-slate-400 mt-2" data-astatus="${esc(a.id)}"></div>`}
             </div>`;
+    }
+
+    function votersHtml(a) {
+        const off = new Set(a.off || []);
+        const on = a.voters.length - off.size;
+        return `<details class="mt-2"><summary class="text-xs text-blue-300 cursor-pointer">Analistas del comité: ${on} conectados de ${a.voters.length}</summary>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-2">${a.voters.map(v => `
+                <label class="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                    <input type="checkbox" data-voter="${esc(v.id)}" ${off.has(v.id) ? '' : 'checked'} class="rounded">
+                    ${esc(v.name)} <span class="text-slate-500">${esc(v.family)}</span></label>`).join('')}
+            </div></details>`;
+    }
+
+    // Votos del comité por símbolo: barra compra/venta, porcentaje, votos y quién votó qué.
+    function tallyHtml(a) {
+        const names = Object.fromEntries((a.voters || []).map(v => [v.id, v.name]));
+        const p = a.params || {};
+        const rows = Object.entries(a.tallies || {}).sort(([x], [y]) => x.localeCompare(y));
+        if (!rows.length) return `<p class="text-xs text-slate-400">${a.enabled ? 'Calentando: esperando velas…' : 'Desconectado.'}</p>`;
+        return `<div class="text-xs text-slate-400 mb-1">Opera cuando un lado tiene ≥ ${esc(p.umbral)} % de los votos emitidos y al menos ${esc(p.quorum)} votos. Los neutrales no cuentan.</div>
+            <ul class="space-y-2">${rows.map(([sym, t]) => {
+                const cast = t.buy + t.sell;
+                const pb = cast ? t.pct_buy : 0, ps = cast ? t.pct_sell : 0;
+                const dec = t.side ? `<span class="text-xs font-bold text-white rounded-full px-2 py-0.5 ${t.side === 'buy' ? 'bg-blue-600' : 'bg-orange-600'}">${t.side === 'buy' ? '▲ CONSENSO COMPRA' : '▼ CONSENSO VENTA'}</span>` : '<span class="text-xs text-slate-400">sin consenso</span>';
+                const votes = Object.entries(t.votes || {}).map(([id, v]) => `<span class="inline-block mr-2 whitespace-nowrap">${v === 1 ? `<b style="color:${COL.up}">▲</b>` : v === -1 ? `<b style="color:${COL.down}">▼</b>` : v === 0 ? '<b class="text-slate-400">·</b>' : '<span class="text-slate-500">–</span>'} ${esc(names[id] || id.replace('ext:', 'externo: '))}</span>`).join('');
+                return `<li>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <b class="text-white">${esc(sym)}</b>
+                        <span class="num text-slate-200"><span style="color:${COL.up}">▲ ${pb.toFixed(0)} %</span> · <span style="color:${COL.down}">▼ ${ps.toFixed(0)} %</span> · ${cast} votos${t.neutral ? ` · ${t.neutral} neutrales` : ''}</span>
+                        ${dec}
+                    </div>
+                    <div class="flex h-2 mt-1 rounded overflow-hidden bg-slate-700" style="gap:${pb && ps ? 2 : 0}px" role="img" aria-label="Compra ${pb.toFixed(0)} %, venta ${ps.toFixed(0)} %">
+                        <div style="width:${pb}%;background:${COL.up}"></div><div style="width:${ps}%;background:${COL.down}"></div>
+                    </div>
+                    <details><summary class="text-xs text-slate-400 cursor-pointer">Ver votos</summary><div class="text-xs text-slate-300 mt-1">${votes}</div></details>
+                </li>`;
+            }).join('')}</ul>`;
     }
 
     function riskFormHtml(s) {
@@ -651,6 +694,8 @@
         card.querySelectorAll('[data-f]').forEach(el => { body[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; });
         const params = {};
         card.querySelectorAll('[data-param]').forEach(el => { params[el.dataset.param] = Number(el.value); });
+        const voters = card.querySelectorAll('[data-voter]');
+        if (voters.length) body.off = [...voters].filter(el => !el.checked).map(el => el.dataset.voter);
         if (Object.keys(params).length) body.params = params;
         if (body.enabled && body.mode === 'automatico' && !(state.desk && state.desk.auto_on)) toast('Modo automático guardado. Opera solo cuando enciendas el piloto automático.', 'info');
         try { await api('/api/desk/analyst', body); } catch (e) { toast(e.message, 'error'); }

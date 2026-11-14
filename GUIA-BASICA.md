@@ -124,21 +124,27 @@ Cada vez que quieras usarla:
 4. Pulsa **Revisar**, lee el resumen y **Confirma**.
 5. La operación aparece en **Posiciones abiertas**. Desde ahí puedes **Cerrar** o mover el stop a la entrada.
 
-### Para que opere solo (piloto automático)
+### Para que opere solo (bot automático)
 
-1. Baja hasta **Analistas**. En uno de ellos (por ejemplo **Ruptura de rango**):
-   - marca **Conectado**;
-   - en **Símbolos** escribe por ejemplo `EURUSD`;
-   - en **Modo** elige **Automático** (o **Solo avisos** si prefieres que solo te avise).
-2. En **Tu riesgo** pon cuánto arriesgas por operación (por ejemplo `20`) y la **pérdida máxima del día**
-   (por ejemplo `60`). Pulsa **Guardar riesgo**.
-3. Arriba, pulsa **Encender piloto** y acepta. Desde ese momento opera solo, con tu riesgo.
-4. Para pararlo: **Apagar piloto**. También se apaga solo si pierdes la pérdida máxima del día, y
-   siempre empieza apagado cuando vuelves a arrancar el puente.
+El bot es un **comité de 24 analistas** que votan en cada vela (cada 5 minutos). Cuando **el 75 % o más**
+de los votos van al mismo lado (comprar o vender), el bot pone **stop loss** y **take profit** y abre la
+operación **solo**, con el riesgo que tú elijas.
 
-Los analistas siguen trabajando aunque cierres la app o el móvil, mientras el ordenador, MetaTrader y la
-ventana negra sigan abiertos. Para que opere solo, el robot necesita **AllowTrading = true** y el botón
-**Algo Trading** en verde.
+1. Arranca la ventana negra así (con `--auto` el bot empieza a operar solo):
+
+   ```bash
+   py bridge\server.py --lan --auto
+   ```
+
+2. En la app, en **Tu riesgo**, pon cuánto arriesgas por operación (por ejemplo `20`) y la **pérdida máxima
+   del día** (por ejemplo `60`). Pulsa **Guardar riesgo**.
+3. En **Analistas › Comité de analistas** ves los votos en vivo de cada símbolo. Puedes cambiar el 75 %,
+   los símbolos (vacío = todos), las velas (M5 por defecto) y conectar o desconectar cada analista.
+4. Arriba tienes **Apagar piloto** / **Encender piloto**. Se apaga solo si llegas a la pérdida máxima del día.
+
+El bot vive en el **ordenador**, no en el móvil: el móvil es el mando. Mientras el ordenador, MetaTrader y la
+ventana negra estén abiertos, opera aunque cierres el móvil. Para operar, el robot de MetaTrader necesita
+**AllowTrading = true** y el botón **Algo Trading** en verde.
 
 ---
 
