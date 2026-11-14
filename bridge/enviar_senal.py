@@ -8,7 +8,7 @@ Envía una señal de un analista externo al puente web-finances.
   py bridge\\enviar_senal.py --analista claude --plan trader/plan.json --simbolo TSLA
 
   # o solo VOTAR en el comité (cuenta como un analista más durante --minutos):
-  py bridge\enviar_senal.py --analista claude --simbolo EURUSD --lado buy --votar --minutos 60
+  py bridge\\enviar_senal.py --analista claude --simbolo EURUSD --lado buy --votar --minutos 60
 
 La primera vez el analista aparece en la app DESCONECTADO: conéctalo y elige "Solo avisos" o
 "Automático". El puente calcula los lotes con tu riesgo y aplica todos los límites.
